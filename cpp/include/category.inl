@@ -11,6 +11,8 @@
 #include <thrust/sequence.h>
 #include <thrust/gather.h>
 
+void printValues( const int* values, int count );
+
 namespace cudf
 {
 
@@ -249,7 +251,7 @@ inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count 
     memcpy( d_both_keys + kcount, items, count*sizeof(T) );  // and those keys
     thrust::host_vector<int> xvals(both_count); 
     int* d_xvals = xvals.data(); // build vector like: 0,...,(kcount-1),-1,...,-count
-    thrust::for_each_n(thrust::host, thrust::make_counting_iterator<int>(0), (int)(both_count-1),
+    thrust::for_each_n(thrust::host, thrust::make_counting_iterator<int>(0), (int)both_count,
         [d_xvals, kcount] (int idx) {
             if( idx < kcount )
                 d_xvals[idx] = idx;             //  0 ... (kcount-1)
@@ -271,7 +273,7 @@ inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count 
             [d_xvals, d_yvals] (int idx) { return (d_xvals[idx]>=0) && (d_yvals[idx]==0); });
         unique_count = (size_t)(d_end - d_indexes);
         result->impl.create_keys( d_both_keys, d_indexes, unique_count, false, result->_keys);
-        //
+        // setup for the value remap
         thrust::host_vector<int> new_xvals(unique_count);
         thrust::gather( d_indexes, d_indexes+unique_count, d_xvals, new_xvals.data() );
         xvals.swap(new_xvals);
@@ -299,15 +301,134 @@ inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count 
 }
 
 template<typename T, class Impl>
-inline category<T>* category<T,Impl>::remove_unused_keys( const T* items_in, size_t count )
+inline category<T>* category<T,Impl>::remove_unused_keys()
 {
-    return nullptr;
+    size_t kcount = keys_size();
+    if( kcount==0 )
+        return copy();
+    const int* d_values = values();
+    thrust::host_vector<int> usedkeys(kcount,0);
+    int* d_usedkeys = usedkeys.data();
+    // find the keys that not being used
+    thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)size(),
+        [d_values, d_usedkeys] (int idx) {
+            int pos = d_values[idx];
+            if( pos >= 0 )
+                d_usedkeys[pos] = 1; // race condition not important
+        });
+    // compute how many are not used
+    size_t count = kcount - thrust::reduce(d_usedkeys,d_usedkeys+kcount,(int)0);
+    if( count==0 )
+        return copy();
+    //
+    thrust::host_vector<T> rmv_keys(count);
+    T* d_rmv_keys = rmv_keys.data();
+    thrust::host_vector<int> indexes(count);
+    int* d_indexes = indexes.data();
+    thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(kcount), d_indexes,
+        [d_usedkeys] (int idx) { return (d_usedkeys[idx]==0); });
+    thrust::gather( d_indexes, d_indexes+count, _keys.data(), d_rmv_keys );
+    return remove_keys( d_rmv_keys, count );
 }
 
 template<typename T, class Impl>
-inline category<T>* category<T,Impl>::set_keys( const T* items_in, size_t count )
+inline category<T>* category<T,Impl>::set_keys( const T* items, size_t count )
 {
-    return nullptr;
+    size_t kcount = keys_size();
+    category<T>* result = new category<T>;
+    if( (kcount==0) && (count==0) )
+        return result; // empty category
+    size_t vcount = size();
+    if( count==0 )
+    {   // all keys are removed
+        result->_values.resize(vcount);
+        int* d_values = const_cast<int*>(result->_values.data());
+        thrust::fill(d_values, d_values + vcount, -1 );
+        return result;
+    }
+    if( kcount==0 )
+    {   // just take the new keys and copy the values
+        thrust::host_vector<T> newkeys(items,items+count); // copy input array so we can sort it
+        T* d_newkeys = newkeys.data();
+        thrust::sort( newkeys.begin(), newkeys.end() );
+        auto d_end_keys = thrust::unique( d_newkeys, d_newkeys+count );
+        result->impl.create_keys(d_newkeys,(size_t)(d_end_keys - d_newkeys),false,result->_keys);
+        if( vcount )
+        {
+            result->_values.resize(vcount);
+            memcpy( result->_values.data(), _values.data(), vcount*sizeof(int) );
+        }
+        return result;
+    }
+    // both kcount and count are non-zero
+    size_t both_count = kcount + count; // this is not the unique count
+    thrust::host_vector<T> both_keys(both_count);  // first combine both keysets
+    T* d_both_keys = both_keys.data();
+    memcpy( d_both_keys, keys(), kcount*sizeof(T) );         // these keys
+    memcpy( d_both_keys + kcount, items, count*sizeof(T) );  // and those keys
+    thrust::host_vector<int> xvals(both_count); 
+    int* d_xvals = xvals.data(); // build vector like: 0,...,(kcount-1),-1,...,-count
+    thrust::for_each_n(thrust::host, thrust::make_counting_iterator<size_t>(0), both_count,
+        [d_xvals, kcount] (size_t idx) {
+            if( idx < kcount )
+                d_xvals[idx] = idx;             //  0 ... (kcount-1)
+            else
+                d_xvals[idx]= kcount - idx -1;  // -1 ... -count
+        });
+    // compute the new keyset by doing sort/unique
+    // stable-sort preserves order for keys that match
+    thrust::stable_sort_by_key( d_both_keys, d_both_keys + both_count, d_xvals );
+    thrust::host_vector<int> yvals(both_count,0);
+    int* d_yvals = yvals.data();
+    thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)(both_count-1),
+        [d_yvals, d_both_keys] (int idx) { d_yvals[idx] = (int)(d_both_keys[idx]==d_both_keys[idx+1]); });
+
+    int matched = thrust::reduce( d_yvals, d_yvals + both_count ); // how many keys matched
+    thrust::host_vector<int> indexes(both_count); // needed for gather methods
+    int* d_indexes = indexes.data(); // indexes of keys from key1 not in key2
+    int copy_count = both_count; // how many keys to copy
+    {
+        int* nend = thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(both_count), d_indexes,
+            [d_xvals, d_yvals] (int idx) { return (d_xvals[idx]<0) || d_yvals[idx]; });
+        copy_count = nend - d_indexes;
+    }
+    if( copy_count < both_count )
+    {
+        thrust::host_vector<T> copy_keys(copy_count);
+        thrust::host_vector<T> copy_xvals(copy_count);
+        thrust::gather( d_indexes, d_indexes + copy_count, both_keys.begin(), copy_keys.begin() );
+        thrust::gather( d_indexes, d_indexes + copy_count, xvals.begin(), copy_xvals.begin() );
+        both_keys.swap(copy_keys);
+        xvals.swap(copy_xvals);
+        d_both_keys = both_keys.data();
+        d_xvals = xvals.data();
+        both_count = copy_count;
+    }
+
+    thrust::unique_by_key( d_both_keys, d_both_keys + both_count, d_xvals );
+    size_t unique_count = both_count - matched;
+    result->impl.create_keys( d_both_keys, unique_count, false, result->_keys );
+
+    if( vcount )
+    {
+        const int* d_values = values();
+        result->_values.resize(vcount);
+        int* d_new_values = const_cast<int*>(result->values());
+        thrust::fill( d_yvals, d_yvals + kcount, -1 );
+        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)unique_count,
+            [d_xvals, d_yvals] (int idx) {
+                int value = d_xvals[idx];
+                if( value >= 0 )
+                    d_yvals[value] = idx;
+            });
+        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)vcount, 
+            [d_values, d_yvals, d_new_values] (int idx) {
+                int value = d_values[idx];
+                d_new_values[idx] = ( value < 0 ? value : d_yvals[value] );
+            });
+    }
+
+    return result;
 }
 
 

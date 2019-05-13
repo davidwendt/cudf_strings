@@ -43,17 +43,26 @@ void test_int()
     printValues(values,count);
 
     // add keys
-    printf(" int add_keys\n");
+    printf(" int add_keys (2,4,3,0)\n");
     int avals[] = { 2,4,3,0 };
     cudf::category<int>* addcat = intcat.add_keys( avals, 4 );
     for( int idx=0; idx < (int)addcat->keys_size(); ++idx )
         printf(" %d",addcat->keys()[idx]);
     printf("\n");
     printValues(addcat->values(),addcat->size());
+
+    // remove unused keys
+    printf(" int remove_unused\n");
+    cudf::category<int>* unucat = intcat.remove_unused_keys();
+    for( int idx=0; idx < (int)unucat->keys_size(); ++idx )
+        printf(" %d",unucat->keys()[idx]);
+    printf("\n");
+    printValues(unucat->values(),unucat->size());
+    delete unucat;
     delete addcat;
 
     // remove keys
-    printf(" int remove_keys\n");
+    printf(" int remove_keys (4,0)\n");
     int rvals[] = { 4,0 };
     cudf::category<int>* rmvcat = intcat.remove_keys( rvals, 2 );
     for( int idx=0; idx < (int)rmvcat->keys_size(); ++idx )
@@ -61,6 +70,16 @@ void test_int()
     printf("\n");
     printValues(rmvcat->values(),rmvcat->size());
     delete rmvcat;
+
+    // set keys
+    printf(" int set_keys (4,2,3,0)\n");
+    int svals[] = { 4,2,3,0 };
+    cudf::category<int>* setcat = intcat.remove_keys( svals, 4 );
+    for( int idx=0; idx < (int)setcat->keys_size(); ++idx )
+        printf(" %d",setcat->keys()[idx]);
+    printf("\n");
+    printValues(setcat->values(),setcat->size());
+    delete setcat;
 }
 
 void test_float()
