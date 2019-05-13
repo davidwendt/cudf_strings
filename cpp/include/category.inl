@@ -114,7 +114,7 @@ template<typename T, class Impl>
 inline category<T>* category<T,Impl>::copy()
 {
     category<T>* result = new category<T>;
-    result->impl.create_keys(_keys.data(),keys_size(),result._keys);
+    result->impl.create_keys(_keys.data(),_keys.size(),false,result->_keys);
     result->_values.assign(_values.begin(),_values.end());
     result->_bitmask.assign(_bitmask.begin(),_bitmask.end());
     return result;
@@ -176,11 +176,11 @@ inline category<T>* category<T,Impl>::add_keys( const T* items, size_t count )
         thrust::sort(thrust::host, indexes.begin(), indexes.end(),
             [items] (int lhs, int rhs) { return items[lhs]<items[rhs]; } ); // handle nulls too
         int* d_indexes = indexes.data();
-        int* d_end = thrust::unique(thrust::host, indexes.begin(), indexes.end(),
+        int* d_end = thrust::unique(thrust::host, d_indexes, d_indexes+indexes.size(),
             [items] (int lhs, int rhs ) {
                 return items[lhs]==items[rhs];
             });
-        result->impl.create_keys(items,indexes.data(),(d_end-d_indexes),false,result->_keys);
+        result->impl.create_keys(items,indexes.data(),(size_t)(d_end-d_indexes),false,result->_keys);
         if( size() )  // just copy the values if we have them
             result->_values.assign(_values.begin(),_values.end());
         return result;
@@ -193,8 +193,8 @@ inline category<T>* category<T,Impl>::add_keys( const T* items, size_t count )
     memcpy( d_both_keys + kcount, items, count*sizeof(T) );  // and those keys
     thrust::host_vector<int> xvals(both_count); 
     int* d_xvals = xvals.data(); // build vector like: 0,...,(kcount-1),-1,...,-count
-    thrust::for_each_n(thrust::host, thrust::make_counting_iterator<int>(0), both_count,
-        [d_xvals, kcount] (int idx) {
+    thrust::for_each_n(thrust::host, thrust::make_counting_iterator<size_t>(0), both_count,
+        [d_xvals, kcount] (size_t idx) {
             if( idx < kcount )
                 d_xvals[idx] = idx;             //  0 ... (kcount-1)
             else
@@ -211,21 +211,21 @@ inline category<T>* category<T,Impl>::add_keys( const T* items, size_t count )
     if( size() )
     {
         size_t vcount = size();
-        int* d_values = values();
+        const int* d_values = values();
         result->_values.resize(vcount);
-        int* d_new_values = result->values();
+        int* d_new_values = const_cast<int*>(result->values());
         // map the new positions
         thrust::host_vector<int> yvals(kcount,-1);
         int* d_yvals = yvals.data();
-        thrust::for_each_n( thrust::make_counting_iterator<int>(0), unique_count,
-            [d_yvals, d_xvals] (int idx) {
+        thrust::for_each_n(thrust::host, thrust::make_counting_iterator<size_t>(0), unique_count,
+            [d_yvals, d_xvals] (size_t idx) {
                 int map_id = d_xvals[idx];
                 if( map_id >= 0 )
                     d_yvals[map_id] = idx;
             });
         // apply new positions to new category values
-        thrust::for_each_n( thrust::make_counting_iterator<int>(0), vcount,
-            [d_values, d_yvals, d_new_values] (int idx) {
+        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<size_t>(0), vcount,
+            [d_values, d_yvals, d_new_values] (size_t idx) {
                 int value = d_values[idx];
                 d_new_values[idx] = (value < 0 ? value : d_yvals[value]);
             });
@@ -249,7 +249,7 @@ inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count 
     memcpy( d_both_keys + kcount, items, count*sizeof(T) );  // and those keys
     thrust::host_vector<int> xvals(both_count); 
     int* d_xvals = xvals.data(); // build vector like: 0,...,(kcount-1),-1,...,-count
-    thrust::for_each_n(thrust::host, thrust::make_counting_iterator<int>(0), (both_count-1),
+    thrust::for_each_n(thrust::host, thrust::make_counting_iterator<int>(0), (int)(both_count-1),
         [d_xvals, kcount] (int idx) {
             if( idx < kcount )
                 d_xvals[idx] = idx;             //  0 ... (kcount-1)
@@ -261,15 +261,15 @@ inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count 
     thrust::stable_sort_by_key( d_both_keys, d_both_keys + both_count, d_xvals );
     thrust::host_vector<int> yvals(both_count);
     int* d_yvals = yvals.data();
-    thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (both_count-1),
-        [d_yvals, d_both_keys] (int idx) { return d_both_keys[idx]==d_both_keys[idx+1]; });
+    thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)(both_count-1),
+        [d_yvals, d_both_keys] (int idx) { d_yvals[idx] = (int)(d_both_keys[idx]==d_both_keys[idx+1]); });
     size_t unique_count = both_count;
     {
         thrust::host_vector<int> indexes(both_count);
         int* d_indexes = indexes.data();
         int* d_end = thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(both_count), d_indexes,
             [d_xvals, d_yvals] (int idx) { return (d_xvals[idx]>=0) && (d_yvals[idx]==0); });
-        unique_count = d_end - d_indexes;
+        unique_count = (size_t)(d_end - d_indexes);
         result->impl.create_keys( d_both_keys, d_indexes, unique_count, false, result->_keys);
         //
         thrust::host_vector<int> new_xvals(unique_count);
@@ -282,14 +282,14 @@ inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count 
     if( size() )
     {
         size_t vcount = size();
-        int* d_values = values();
+        const int* d_values = values();
         result->_values.resize(vcount);
-        int* d_new_values = result->values();
+        int* d_new_values = const_cast<int*>(result->values());
         // values pointed to removed keys will now have index=-1
         thrust::fill( d_yvals, d_yvals + kcount, -1 );
-        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), unique_count,
+        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)unique_count,
             [d_yvals, d_xvals] (int idx) { d_yvals[d_xvals[idx]] = idx; });
-        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), vcount, 
+        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)vcount, 
             [d_values, d_yvals, d_new_values] (int idx) {
                 int value = d_values[idx];
                 d_new_values[idx] = ( value < 0 ? value : d_yvals[value] );
@@ -297,6 +297,19 @@ inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count 
     }
     return result;
 }
+
+template<typename T, class Impl>
+inline category<T>* category<T,Impl>::remove_unused_keys( const T* items_in, size_t count )
+{
+    return nullptr;
+}
+
+template<typename T, class Impl>
+inline category<T>* category<T,Impl>::set_keys( const T* items_in, size_t count )
+{
+    return nullptr;
+}
+
 
 template<typename T, class Impl>
 inline category<T>* category<T,Impl>::merge_category( category<T>& cat )

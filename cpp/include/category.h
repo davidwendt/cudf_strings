@@ -56,6 +56,8 @@ public:
 
     inline category<T>* add_keys( const T* items_in, size_t count );
     inline category<T>* remove_keys( const T* items_in, size_t count );
+    inline category<T>* remove_unused_keys( const T* items_in, size_t count );
+    inline category<T>* set_keys( const T* items_in, size_t count );
     inline category<T>* merge_category( category<T>& cat_in );
 
     inline category<T>* gather(const int* pos, size_t elements );

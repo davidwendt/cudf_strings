@@ -25,7 +25,7 @@ void printValues( const int* values, int count )
 
 
 
-int g_ivals[] = { 0,1,2,3,2,1,0,1,1,3 };
+int g_ivals[] = { 4,1,2,3,2,1,4,1,1 };
 float g_fvals[] = { 0.0,1.0,1.25,1.50,1.0,1.25,1.0,1.0,0 };
 const char* g_cvals[] = { "e", "a", "d",  "b", "c", "c",  "c", "e", "a" };
 std::string g_svals[] = { "e", "a", "d",  "b", "c", "c",  "c", "e", "a" };
@@ -42,10 +42,25 @@ void test_int()
     printf("\n");
     printValues(values,count);
 
-    // get key for
-    for( int idx=0; idx < count; ++idx )
-        printf(" %d",intcat.get_key_for(values[idx]));
+    // add keys
+    printf(" int add_keys\n");
+    int avals[] = { 2,4,3,0 };
+    cudf::category<int>* addcat = intcat.add_keys( avals, 4 );
+    for( int idx=0; idx < (int)addcat->keys_size(); ++idx )
+        printf(" %d",addcat->keys()[idx]);
     printf("\n");
+    printValues(addcat->values(),addcat->size());
+    delete addcat;
+
+    // remove keys
+    printf(" int remove_keys\n");
+    int rvals[] = { 4,0 };
+    cudf::category<int>* rmvcat = intcat.remove_keys( rvals, 2 );
+    for( int idx=0; idx < (int)rmvcat->keys_size(); ++idx )
+        printf(" %d",rmvcat->keys()[idx]);
+    printf("\n");
+    printValues(rmvcat->values(),rmvcat->size());
+    delete rmvcat;
 }
 
 void test_float()
