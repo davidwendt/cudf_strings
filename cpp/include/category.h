@@ -7,7 +7,7 @@ namespace cudf
 {
 
 // 
-template<typename T> // T cannot be const
+template<typename T> // do not declare with const type
 class category_impl
 {
 public:
@@ -28,13 +28,16 @@ public:
 template<typename T, class Impl=category_impl<T> >  // T cannot be const
 class category
 {
-    thrust::host_vector<T> _keys; // could move this into impl; create individual objects on-demand
+    thrust::host_vector<T> _keys; // should move this into impl; create individual objects on-demand
     thrust::host_vector<int> _values;
     thrust::host_vector<char> _bitmask;
     Impl impl;
 
     category() {};
     category( const category& ) {};
+
+    inline void init_keys(const T* items, size_t count, bool includes_null=false );
+    inline void init_keys(const T* items, const int* indexes, size_t count, bool includes_null=false );
 public:
 
     category( const T* items, size_t count ); // needs bitmask
@@ -45,7 +48,7 @@ public:
     size_t size()       { return _values.size(); }
     size_t keys_size()  { return _keys.size(); }
 
-    const T* keys()       { return _keys.data(); } // on-demand make this not possible
+    const T* keys()       { return _keys.data(); } // on-demand makes this not possible
     const int* values()   { return _values.data(); }
     const char* bitmask() { return _bitmask.data(); }
 
@@ -58,12 +61,12 @@ public:
     inline category<T>* remove_keys( const T* items, size_t count );
     inline category<T>* remove_unused_keys();
     inline category<T>* set_keys( const T* items, size_t count );
-    inline category<T>* merge_category( category<T>& cat );
+    inline category<T>* merge( category<T>& cat );
 
-    inline category<T>* gather(const int* pos, size_t elements );
+    inline category<T>* gather(const int* indexes, size_t count );
 
     inline void to_type( T* results ); // must be able to hold size() entries
-    inline void gather_type( const int* pos, size_t count, T* results );
+    inline void gather_type( const int* indexes, size_t count, T* results );
 };
 
 }

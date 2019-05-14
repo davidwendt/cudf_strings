@@ -26,7 +26,7 @@ void printValues( const int* values, int count )
 
 
 int g_ivals[] = { 4,1,2,3,2,1,4,1,1 };
-float g_fvals[] = { 0.0,1.0,1.25,1.50,1.0,1.25,1.0,1.0,0 };
+float g_fvals[] = { 2.0,1.0,1.25,1.50,1.0,1.25,1.0,1.0,2.0 };
 const char* g_cvals[] = { "e", "a", "d",  "b", "c", "c",  "c", "e", "a" };
 std::string g_svals[] = { "e", "a", "d",  "b", "c", "c",  "c", "e", "a" };
 
@@ -74,12 +74,44 @@ void test_int()
     // set keys
     printf(" int set_keys (4,2,3,0)\n");
     int svals[] = { 4,2,3,0 };
-    cudf::category<int>* setcat = intcat.remove_keys( svals, 4 );
+    cudf::category<int>* setcat = intcat.set_keys( svals, 4 );
     for( int idx=0; idx < (int)setcat->keys_size(); ++idx )
         printf(" %d",setcat->keys()[idx]);
     printf("\n");
     printValues(setcat->values(),setcat->size());
     delete setcat;
+    // null keyset
+    cudf::category<int>* nullcat = intcat.set_keys( nullptr, 0 );
+    printf(" null keyset size = %ld\n", nullcat->keys_size() );
+    printValues(nullcat->values(),nullcat->size());
+    setcat = nullcat->set_keys( svals, 4 );
+    for( int idx=0; idx < (int)setcat->keys_size(); ++idx )
+        printf(" %d",setcat->keys()[idx]);
+    printf("\n");
+    printValues(setcat->values(),setcat->size());
+    delete setcat;
+    delete nullcat;
+
+    // gather
+    printf(" int gather (2,3,1,1,3,3)\n");
+    int gvals[] = { 2,3,1,1,3,3 };
+    cudf::category<int>* gatcat = intcat.gather( gvals, 6 );
+    for( int idx=0; idx < (int)gatcat->keys_size(); ++idx )
+        printf(" %d",gatcat->keys()[idx]);
+    printf("\n");
+    printValues(gatcat->values(),gatcat->size());
+    delete gatcat;
+
+    // merge
+    printf(" int merge (2,3,1,1,0,3)\n");
+    int mvals[] = { 2,3,1,1,0,3 };
+    cudf::category<int> twocat( mvals, 6 );
+    cudf::category<int>* mrgcat = intcat.merge(twocat);
+    for( int idx=0; idx < (int)mrgcat->keys_size(); ++idx )
+        printf(" %d",mrgcat->keys()[idx]);
+    printf("\n");
+    printValues(mrgcat->values(),mrgcat->size());
+    delete mrgcat;
 }
 
 void test_float()
@@ -90,6 +122,56 @@ void test_float()
         printf(" %g",fltcat.keys()[idx]);
     printf("\n");
     printValues(fltcat.values(),fltcat.size());
+
+    // add keys
+    printf(" float add_keys (2.0,1.0,1.75,0.0)\n");
+    float avals[] = { 2.0,1.0,1.75,0.0 };
+    cudf::category<float>* addcat = fltcat.add_keys( avals, 4 );
+    for( int idx=0; idx < (int)addcat->keys_size(); ++idx )
+        printf(" %g",addcat->keys()[idx]);
+    printf("\n");
+    printValues(addcat->values(),addcat->size());
+
+    // remove unused keys
+    printf(" float remove_unused\n");
+    cudf::category<float>* unucat = fltcat.remove_unused_keys();
+    for( int idx=0; idx < (int)unucat->keys_size(); ++idx )
+        printf(" %g",unucat->keys()[idx]);
+    printf("\n");
+    printValues(unucat->values(),unucat->size());
+    delete unucat;
+    delete addcat;
+
+    // remove keys
+    printf(" float remove_keys (1.75,0.0)\n");
+    float rvals[] = { 1.75,0.0 };
+    cudf::category<float>* rmvcat = fltcat.remove_keys( rvals, 2 );
+    for( int idx=0; idx < (int)rmvcat->keys_size(); ++idx )
+        printf(" %g",rmvcat->keys()[idx]);
+    printf("\n");
+    printValues(rmvcat->values(),rmvcat->size());
+    delete rmvcat;
+
+    // set keys
+    printf(" int set_keys (2.0,1.5,1.75,0.0)\n");
+    float svals[] = { 2.0,1.5,1.75,0.0 };
+    cudf::category<float>* setcat = fltcat.set_keys( svals, 4 );
+    for( int idx=0; idx < (int)setcat->keys_size(); ++idx )
+        printf(" %d",setcat->keys()[idx]);
+    printf("\n");
+    printValues(setcat->values(),setcat->size());
+    delete setcat;
+    // null keyset
+    cudf::category<float>* nullcat = fltcat.set_keys( nullptr, 0 );
+    printf(" null keyset size = %ld\n", nullcat->keys_size() );
+    printValues(nullcat->values(),nullcat->size());
+    setcat = nullcat->set_keys( svals, 4 );
+    for( int idx=0; idx < (int)setcat->keys_size(); ++idx )
+        printf(" %d",setcat->keys()[idx]);
+    printf("\n");
+    printValues(setcat->values(),setcat->size());
+    delete setcat;
+    delete nullcat;
 }
 
 void test_string()
