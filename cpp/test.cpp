@@ -1,7 +1,9 @@
 
 #include <cstdio>
+#include <iostream>
 #include <vector>
 #include <string>
+#include <typeinfo>
 #include "include/dstring.h"
 #include "include/category.h"
 
@@ -23,188 +25,123 @@ void printValues( const int* values, int count )
     printf("\n");
 }
 
-
+// this needed to do cout on dstring object
+std::ostream& operator<<(std::ostream& os, const cudf::dstring& ds )
+{
+    os << ds.data();
+    return os;
+}
 
 int g_ivals[] = { 4,1,2,3,2,1,4,1,1 };
+int g_ivals2[] = { 2,4,3,0 };
+long g_lvals[] = { 1,1,4,1,2,3,2,1,4 };
+long g_lvals2[] = { 3,4,0,2 };
 float g_fvals[] = { 2.0,1.0,1.25,1.50,1.0,1.25,1.0,1.0,2.0 };
-const char* g_cvals[] = { "e", "a", "d",  "b", "c", "c",  "c", "e", "a" };
-std::string g_svals[] = { "e", "a", "d",  "b", "c", "c",  "c", "e", "a" };
+float g_fvals2[] = { 2.0,1.0,1.75,0.0 };
+double g_dvals[] = { 2.0,1.0,1.0,1e25,1.0,1e25,1e50,1.0,2.0 };
+double g_dvals2[] = { 2.0,1.0,1e75,0.0 };
+std::string g_svals[] = { "e", "a", "d", "b", "c", "c", "c", "e", "a" };
+std::string g_svals2[] = { "b", "c", "d", "f" };
 
 
-void test_int()
+template<typename T>
+void printKeys( cudf::category<T>& cat )
 {
-    cudf::category<int> intcat( g_ivals, 9 );
-    const int* values = intcat.values();
-    int count = (int)intcat.size();
-    printf("intcat(%ld,%ld)\n", intcat.keys_size(), intcat.size());
-    for( int idx=0; idx < (int)intcat.keys_size(); ++idx )
-        printf(" %d",intcat.keys()[idx]);
-    printf("\n");
+    const T* keys = cat.keys();
+    int count = (int)cat.keys_size();
+    for( size_t idx=0; idx < count; ++idx )
+        std::cout << " " << keys[idx];
+    std::cout << "\n";
+}
+
+template<typename T>
+void testcat( const T* data1, const T* data2 )
+{
+    std::cout << "-----------------\n";
+    cudf::category<T> cat( data1, 9 );
+    const int* values = cat.values();
+    int count = (int)cat.size();
+    std::cout << typeid(T).name() << " cat("<< cat.keys_size() << "," << count << ")\n";
+    printKeys(cat);
     printValues(values,count);
 
     // add keys
-    printf(" int add_keys (2,4,3,0)\n");
-    int avals[] = { 2,4,3,0 };
-    cudf::category<int>* addcat = intcat.add_keys( avals, 4 );
-    for( int idx=0; idx < (int)addcat->keys_size(); ++idx )
-        printf(" %d",addcat->keys()[idx]);
-    printf("\n");
+    std::cout << " add_keys\n";
+    cudf::category<T>* addcat = cat.add_keys( data2, 4 );
+    printKeys(*addcat);
     printValues(addcat->values(),addcat->size());
 
     // remove unused keys
-    printf(" int remove_unused\n");
-    cudf::category<int>* unucat = intcat.remove_unused_keys();
-    for( int idx=0; idx < (int)unucat->keys_size(); ++idx )
-        printf(" %d",unucat->keys()[idx]);
-    printf("\n");
+    std::cout << " remove_unused\n";
+    cudf::category<T>* unucat = addcat->remove_unused_keys();
+    printKeys(*unucat);
     printValues(unucat->values(),unucat->size());
     delete unucat;
     delete addcat;
 
     // remove keys
-    printf(" int remove_keys (4,0)\n");
-    int rvals[] = { 4,0 };
-    cudf::category<int>* rmvcat = intcat.remove_keys( rvals, 2 );
-    for( int idx=0; idx < (int)rmvcat->keys_size(); ++idx )
-        printf(" %d",rmvcat->keys()[idx]);
-    printf("\n");
+    std::cout << " remove_keys\n";
+    cudf::category<T>* rmvcat = cat.remove_keys( data2+2, 2 );
+    printKeys(*rmvcat);
     printValues(rmvcat->values(),rmvcat->size());
     delete rmvcat;
 
     // set keys
-    printf(" int set_keys (4,2,3,0)\n");
-    int svals[] = { 4,2,3,0 };
-    cudf::category<int>* setcat = intcat.set_keys( svals, 4 );
-    for( int idx=0; idx < (int)setcat->keys_size(); ++idx )
-        printf(" %d",setcat->keys()[idx]);
-    printf("\n");
+    std::cout << " set_keys\n";
+    cudf::category<T>* setcat = cat.set_keys( data2, 4 );
+    printKeys(*setcat);
     printValues(setcat->values(),setcat->size());
     delete setcat;
     // null keyset
-    cudf::category<int>* nullcat = intcat.set_keys( nullptr, 0 );
-    printf(" null keyset size = %ld\n", nullcat->keys_size() );
+    cudf::category<T>* nullcat = cat.set_keys( nullptr, 0 );
+    std::cout << " null keyset size = " << nullcat->keys_size() << "\n";
     printValues(nullcat->values(),nullcat->size());
-    setcat = nullcat->set_keys( svals, 4 );
-    for( int idx=0; idx < (int)setcat->keys_size(); ++idx )
-        printf(" %d",setcat->keys()[idx]);
-    printf("\n");
+    setcat = nullcat->set_keys( data2, 4 );
+    printKeys(*setcat);
     printValues(setcat->values(),setcat->size());
     delete setcat;
     delete nullcat;
 
     // gather
-    printf(" int gather (2,3,1,1,3,3)\n");
+    std::cout << " gather indexes=[2,3,1,1,3,3]\n";
     int gvals[] = { 2,3,1,1,3,3 };
-    cudf::category<int>* gatcat = intcat.gather( gvals, 6 );
-    for( int idx=0; idx < (int)gatcat->keys_size(); ++idx )
-        printf(" %d",gatcat->keys()[idx]);
-    printf("\n");
+    cudf::category<T>* gatcat = cat.gather( gvals, 6 );
+    printKeys(*gatcat);
     printValues(gatcat->values(),gatcat->size());
     delete gatcat;
 
     // merge
-    printf(" int merge (2,3,1,1,0,3)\n");
-    int mvals[] = { 2,3,1,1,0,3 };
-    cudf::category<int> twocat( mvals, 6 );
-    cudf::category<int>* mrgcat = intcat.merge(twocat);
-    for( int idx=0; idx < (int)mrgcat->keys_size(); ++idx )
-        printf(" %d",mrgcat->keys()[idx]);
-    printf("\n");
+    std::cout << " merge ";
+    cudf::category<T> twocat( data2, 4 );
+    printKeys(twocat);
+    cudf::category<T>* mrgcat = cat.merge(twocat);
+    printKeys(*mrgcat);
     printValues(mrgcat->values(),mrgcat->size());
     delete mrgcat;
-}
-
-void test_float()
-{
-    cudf::category<float> fltcat( g_fvals, 9 );
-    printf("fltcat(%ld,%ld)\n", fltcat.keys_size(), fltcat.size());
-    for( int idx=0; idx < (int)fltcat.keys_size(); ++idx )
-        printf(" %g",fltcat.keys()[idx]);
-    printf("\n");
-    printValues(fltcat.values(),fltcat.size());
-
-    // add keys
-    printf(" float add_keys (2.0,1.0,1.75,0.0)\n");
-    float avals[] = { 2.0,1.0,1.75,0.0 };
-    cudf::category<float>* addcat = fltcat.add_keys( avals, 4 );
-    for( int idx=0; idx < (int)addcat->keys_size(); ++idx )
-        printf(" %g",addcat->keys()[idx]);
-    printf("\n");
-    printValues(addcat->values(),addcat->size());
-
-    // remove unused keys
-    printf(" float remove_unused\n");
-    cudf::category<float>* unucat = fltcat.remove_unused_keys();
-    for( int idx=0; idx < (int)unucat->keys_size(); ++idx )
-        printf(" %g",unucat->keys()[idx]);
-    printf("\n");
-    printValues(unucat->values(),unucat->size());
-    delete unucat;
-    delete addcat;
-
-    // remove keys
-    printf(" float remove_keys (1.75,0.0)\n");
-    float rvals[] = { 1.75,0.0 };
-    cudf::category<float>* rmvcat = fltcat.remove_keys( rvals, 2 );
-    for( int idx=0; idx < (int)rmvcat->keys_size(); ++idx )
-        printf(" %g",rmvcat->keys()[idx]);
-    printf("\n");
-    printValues(rmvcat->values(),rmvcat->size());
-    delete rmvcat;
-
-    // set keys
-    printf(" int set_keys (2.0,1.5,1.75,0.0)\n");
-    float svals[] = { 2.0,1.5,1.75,0.0 };
-    cudf::category<float>* setcat = fltcat.set_keys( svals, 4 );
-    for( int idx=0; idx < (int)setcat->keys_size(); ++idx )
-        printf(" %d",setcat->keys()[idx]);
-    printf("\n");
-    printValues(setcat->values(),setcat->size());
-    delete setcat;
-    // null keyset
-    cudf::category<float>* nullcat = fltcat.set_keys( nullptr, 0 );
-    printf(" null keyset size = %ld\n", nullcat->keys_size() );
-    printValues(nullcat->values(),nullcat->size());
-    setcat = nullcat->set_keys( svals, 4 );
-    for( int idx=0; idx < (int)setcat->keys_size(); ++idx )
-        printf(" %d",setcat->keys()[idx]);
-    printf("\n");
-    printValues(setcat->values(),setcat->size());
-    delete setcat;
-    delete nullcat;
-}
-
-void test_string()
-{
-    cudf::category<std::string> strcat( g_svals, 9 );
-    printf("strcat(%ld,%ld)\n", strcat.keys_size(), strcat.size());
-    for( int idx=0; idx < (int)strcat.keys_size(); ++idx )
-        printf(" %s",(strcat.keys()[idx]).c_str());
-    printf("\n");
-    printValues(strcat.values(),strcat.size());
 }
 
 void test_dstring()
 {
     // create dstring objects from the g_svals
-    std::vector<cudf::dstring> custrs;
+    std::vector<cudf::dstring> custrs1, custrs2;
     for( int idx=9; idx > 0; --idx ) // copying backwards just for kicks
-        custrs.push_back( {g_svals[idx-1].c_str(), g_svals[idx-1].length()+1 } ); //+1 for terminator
+        custrs1.push_back( {g_svals[idx-1].c_str(), g_svals[idx-1].length()+1 } ); //+1 for terminator
+    for( int idx=0; idx < 4; ++idx )
+        custrs2.push_back( {g_svals2[idx].c_str(), g_svals2[idx].length()+1 } );
     
-    cudf::category<cudf::dstring> cucat( custrs.data(), custrs.size() );
-    printf("cucat(%ld,%ld)\n", cucat.keys_size(), cucat.size());
-    for( int idx=0; idx < (int)cucat.keys_size(); ++idx )
-        printf(" %s",(cucat.keys()[idx]).data()); // need terminator for this
-    printf("\n");
-    printValues(cucat.values(),cucat.size());
+    // memory for the dstring's are held in the custr vars and freed when this method ends
+    testcat<cudf::dstring>( custrs1.data(), custrs2.data() );
 }
 
 int main( int argc, const char** argv )
 {
-    test_int();
-    test_float();
-    test_string();
+    testcat<int>( g_ivals, g_ivals2 );
+    testcat<float>( g_fvals, g_fvals2 );
+    testcat<std::string>( g_svals, g_svals2 );
     test_dstring();
+
+    testcat<long>( g_lvals, g_lvals2 );
+    testcat<double>( g_dvals, g_dvals2 );
 
     return 0;
 }

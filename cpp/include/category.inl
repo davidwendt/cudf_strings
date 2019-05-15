@@ -27,7 +27,8 @@ template<typename T>
 inline void category_impl<T>::create_keys(const T* items, size_t ucount, bool includes_null, thrust::host_vector<T>& keys)
 {
     keys.resize(ucount);
-    memcpy( keys.data(), items, ucount*sizeof(T) );
+    //memcpy( keys.data(), items, ucount*sizeof(T) );
+    thrust::copy( items, items + ucount, keys.begin() );
 }
 
 //template<>
@@ -200,11 +201,14 @@ inline category<T>* category<T,Impl>::add_keys( const T* items, size_t count )
         return result;
     }
     // incorporating the keys and adjust the values
+    const T* d_keys = keys();
     size_t both_count = kcount + count; // this is not the unique count
     thrust::host_vector<T> both_keys(both_count);  // first combine both keysets
     T* d_both_keys = both_keys.data();
-    memcpy( d_both_keys, keys(), kcount*sizeof(T) );         // these keys
-    memcpy( d_both_keys + kcount, items, count*sizeof(T) );  // and those keys
+    //memcpy( d_both_keys, keys(), kcount*sizeof(T) );         // these keys
+    thrust::copy( d_keys, d_keys + kcount, d_both_keys );
+    //memcpy( d_both_keys + kcount, items, count*sizeof(T) );  // and those keys
+    thrust::copy( items, items + count, d_both_keys + kcount );
     thrust::host_vector<int> xvals(both_count); 
     int* d_xvals = xvals.data(); // build vector like: 0,...,(kcount-1),-1,...,-count
     thrust::for_each_n(thrust::host, thrust::make_counting_iterator<size_t>(0), both_count,
@@ -257,10 +261,13 @@ inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count 
     category<T>* result = new category<T>;
     //result->_bitmask.insert(_bitmask.begin(),_bitmask.end() ); // this does not change
     size_t both_count = kcount + count;
+    const T* d_keys = keys();
     thrust::host_vector<T> both_keys(both_count);  // first combine both keysets
     T* d_both_keys = both_keys.data();
-    memcpy( d_both_keys, keys(), kcount*sizeof(T) );         // these keys
-    memcpy( d_both_keys + kcount, items, count*sizeof(T) );  // and those keys
+    //memcpy( d_both_keys, keys(), kcount*sizeof(T) );
+    thrust::copy( d_keys, d_keys + kcount, d_both_keys );         // these keys
+    //memcpy( d_both_keys + kcount, items, count*sizeof(T) );
+    thrust::copy( items, items + count, d_both_keys + kcount );  // and those keys
     thrust::host_vector<int> xvals(both_count); 
     int* d_xvals = xvals.data(); // build vector like: 0,...,(kcount-1),-1,...,-count
     thrust::for_each_n(thrust::host, thrust::make_counting_iterator<int>(0), (int)both_count,
@@ -348,10 +355,13 @@ inline category<T>* category<T,Impl>::set_keys( const T* items, size_t count )
 {
     size_t kcount = keys_size();
     size_t both_count = kcount + count; // this is not the unique count
+    const T* d_keys = keys();
     thrust::host_vector<T> both_keys(both_count);  // first combine both keysets
     T* d_both_keys = both_keys.data();
-    memcpy( d_both_keys, keys(), kcount*sizeof(T) );         // these keys
-    memcpy( d_both_keys + kcount, items, count*sizeof(T) );  // and those keys
+    //memcpy( d_both_keys, keys(), kcount*sizeof(T) );
+    thrust::copy( d_keys, d_keys + kcount, d_both_keys );        // these keys
+    //memcpy( d_both_keys + kcount, items, count*sizeof(T) );
+    thrust::copy( items, items + count, d_both_keys + kcount );  // and those keys
     thrust::host_vector<int> xvals(both_count); // seq-vector for resolving old/new keys
     int* d_xvals = xvals.data(); // build vector like: 0,...,(kcount-1),-1,...,-count
     thrust::for_each_n(thrust::host, thrust::make_counting_iterator<size_t>(0), both_count,
@@ -421,11 +431,16 @@ template<typename T, class Impl>
 inline category<T>* category<T,Impl>::merge( category<T>& cat )
 {
     // first, copy keys so we can sort/unique
-    size_t count = keys_size() + cat.keys_size();
+    size_t kcount = keys_size();
+    size_t count = kcount + cat.keys_size();
+    const T* d_keys = keys();
+    const T* d_catkeys = cat.keys();
     thrust::host_vector<T> keyset(count);
     T* d_keyset = keyset.data();
-    memcpy( d_keyset, keys(), keys_size()*sizeof(T) );
-    memcpy( d_keyset+keys_size(), cat.keys(), cat.keys_size()*sizeof(T) );
+    //memcpy( d_keyset, keys(), keys_size()*sizeof(T) );
+    thrust::copy( d_keys, d_keys + kcount, d_keyset );
+    //memcpy( d_keyset+keys_size(), cat.keys(), cat.keys_size()*sizeof(T) );
+    thrust::copy( d_catkeys, d_catkeys + cat.keys_size(), d_keyset + kcount );
     // build sequence vector and sort positions
     thrust::host_vector<int> xvals(count);
     int* d_xvals = xvals.data();
