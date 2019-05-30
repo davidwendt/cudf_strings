@@ -3,6 +3,8 @@
 #include <thrust/host_vector.h>
 #include "dstring.h"
 
+typedef unsigned char BYTE;
+
 namespace cudf
 {
 
@@ -30,7 +32,7 @@ class category
 {
     thrust::host_vector<T> _keys; // should move this into impl; create individual objects on-demand
     thrust::host_vector<int> _values;
-    thrust::host_vector<char> _bitmask;
+    thrust::host_vector<BYTE> _bitmask;
     Impl impl;
 
     category() {};
@@ -40,7 +42,7 @@ class category
     inline void init_keys(const T* items, const int* indexes, size_t count, bool includes_null=false );
 public:
 
-    category( const T* items, size_t count ); // needs bitmask
+    category( const T* items, size_t count, BYTE* nulls=nullptr );
     ~category() {}
 
     inline category<T>* copy();
@@ -50,12 +52,14 @@ public:
 
     const T* keys()       { return _keys.data(); } // on-demand makes this not possible
     const int* values()   { return _values.data(); }
-    const char* bitmask() { return _bitmask.data(); }
+    inline const BYTE* nulls_bitmask();
 
     const T get_key_for(int idx) { return _keys[idx]; } //
+    inline bool is_value_null(int idx);
 
-    inline int get_value_for(T key);
-    inline int* get_indexes_for(T key);
+    inline int get_index_for(T key);
+    inline int* get_values_for(T key);
+    inline int* get_values_for_null_key();
 
     inline category<T>* add_keys( const T* items, size_t count );
     inline category<T>* remove_keys( const T* items, size_t count );
@@ -65,8 +69,8 @@ public:
 
     inline category<T>* gather(const int* indexes, size_t count );
 
-    inline void to_type( T* results ); // must be able to hold size() entries
-    inline void gather_type( const int* indexes, size_t count, T* results );
+    inline void to_type( T* results, BYTE* nulls=nullptr ); // must be able to hold size() entries
+    inline void gather_type( const int* indexes, size_t count, T* results, BYTE* nulls=nullptr );
 };
 
 }

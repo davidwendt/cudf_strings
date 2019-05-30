@@ -123,14 +123,14 @@ void testcat( const T* data1, const T* data2 )
 void test_dstring()
 {
     // create dstring objects from the g_svals
-    std::vector<cudf::dstring> custrs1, custrs2;
+    std::vector<cudf::dstring> dstrs1, dstrs2;
     for( int idx=9; idx > 0; --idx ) // copying backwards just for kicks
-        custrs1.push_back( {g_svals[idx-1].c_str(), g_svals[idx-1].length()+1 } ); //+1 for terminator
+        dstrs1.push_back( {g_svals[idx-1].c_str(), g_svals[idx-1].length()+1 } ); //+1 for terminator
     for( int idx=0; idx < 4; ++idx )
-        custrs2.push_back( {g_svals2[idx].c_str(), g_svals2[idx].length()+1 } );
+        dstrs2.push_back( {g_svals2[idx].c_str(), g_svals2[idx].length()+1 } );
     
     // memory for the dstring's are held in the custr vars and freed when this method ends
-    testcat<cudf::dstring>( custrs1.data(), custrs2.data() );
+    testcat<cudf::dstring>( dstrs1.data(), dstrs2.data() );
 }
 
 int main( int argc, const char** argv )
