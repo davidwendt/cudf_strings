@@ -120,21 +120,27 @@ inline category<T,Impl>::category( const T* items, size_t count, BYTE* nulls )
     _values.resize(count);
     int* d_values = _values.data();
     int* d_indexes = indexes.data();
+
+#if OLDWAY
+    printf("(old way)\n");
     // this will set d_values to 0 for matches and 1 for no match
-    //thrust::for_each_n(thrust::host, thrust::make_counting_iterator<size_t>(0), count,
-    //    [items, nulls, d_indexes, d_values] (size_t idx) {
-    //        if( idx==0 )
-    //        {
-    //            d_values[0] = 0;
-    //            return;
-    //        }
-    //        bool lhs_null = is_item_null(nulls,idx-1);
-    //        bool rhs_null = is_item_null(nulls,idx);
-    //        if( lhs_null || rhs_null )
-    //            d_values[idx] = (int)(lhs_null != rhs_null);
-    //        else
-    //            d_values[idx] = (int)(items[d_indexes[idx-1]] != items[d_indexes[idx]]);
-    //    });
+    thrust::for_each_n(thrust::host, thrust::make_counting_iterator<size_t>(0), count,
+        [items, nulls, d_indexes, d_values] (size_t idx) {
+            if( idx==0 )
+            {
+                d_values[0] = 0;
+                return;
+            }
+            bool lhs_null = is_item_null(nulls,idx-1);
+            bool rhs_null = is_item_null(nulls,idx);
+            if( lhs_null || rhs_null )
+                d_values[idx] = (int)(lhs_null != rhs_null);
+            else
+                d_values[idx] = (int)(items[d_indexes[idx-1]] != items[d_indexes[idx]]);
+        });
+    int ucount = thrust::reduce(thrust::host, d_values, d_values+count) +1;
+#else        
+    printf("(new way)\n");
     thrust::host_vector<int> map_indexes(count);
     int* d_map_indexes = map_indexes.data();
     int* d_nend = thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), d_map_indexes,
@@ -154,24 +160,26 @@ inline category<T,Impl>::category( const T* items, size_t count, BYTE* nulls )
             d_values[idx] = (int)isunique;
             return isunique;
         });
-    
-    //int ucount = thrust::reduce(thrust::host, d_values, d_values+count) +1;
     int ucount = (int)(d_nend - d_map_indexes);
-    // make a copy of just the unique values
+#endif    
     thrust::host_vector<int> keys_indexes(ucount);
-    //thrust::unique_copy(thrust::host, indexes.begin(), indexes.end(), keys_indexes.begin(),
-    //    [items, nulls] ( int lhs, int rhs ) {
-    //        bool lhs_null = is_item_null(nulls,lhs);
-    //        bool rhs_null = is_item_null(nulls,rhs);
-    //        if( lhs_null || rhs_null )
-    //            return lhs_null==rhs_null;
-    //        return items[lhs]==items[rhs];
-    //    });
+#ifdef OLDWAY    
+    // make a copy of just the unique values
+    thrust::unique_copy(thrust::host, indexes.begin(), indexes.end(), keys_indexes.begin(),
+        [items, nulls] ( int lhs, int rhs ) {
+            bool lhs_null = is_item_null(nulls,lhs);
+            bool rhs_null = is_item_null(nulls,rhs);
+            if( lhs_null || rhs_null )
+                return lhs_null==rhs_null;
+            return items[lhs]==items[rhs];
+        });
     // next 3 lines replace unique above but avoids a comparison and operates only on integers
     //thrust::host_vector<int> map_indexes(ucount);
     //thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), map_indexes.begin(), [d_values] (int idx) { return (idx==0) || d_values[idx]; });
     //thrust::gather( map_indexes.begin(), map_indexes.end(), indexes.begin(), keys_indexes.begin() );
+#else    
     thrust::gather( d_map_indexes, d_nend, indexes.begin(), keys_indexes.begin() );
+#endif    
     // scan will produce the resulting values
     thrust::inclusive_scan(thrust::host, d_values, d_values+count, d_values);
     // sort will put them in the correct order
