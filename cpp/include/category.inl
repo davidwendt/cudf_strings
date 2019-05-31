@@ -120,34 +120,65 @@ inline category<T,Impl>::category( const T* items, size_t count, BYTE* nulls )
     _values.resize(count);
     int* d_values = _values.data();
     int* d_indexes = indexes.data();
-    thrust::for_each_n(thrust::host, thrust::make_counting_iterator<size_t>(0), count,
-        [items, nulls, d_indexes, d_values] (size_t idx) {
+    // this will set d_values to 0 for matches and 1 for no match
+    //thrust::for_each_n(thrust::host, thrust::make_counting_iterator<size_t>(0), count,
+    //    [items, nulls, d_indexes, d_values] (size_t idx) {
+    //        if( idx==0 )
+    //        {
+    //            d_values[0] = 0;
+    //            return;
+    //        }
+    //        bool lhs_null = is_item_null(nulls,idx-1);
+    //        bool rhs_null = is_item_null(nulls,idx);
+    //        if( lhs_null || rhs_null )
+    //            d_values[idx] = (int)(lhs_null != rhs_null);
+    //        else
+    //            d_values[idx] = (int)(items[d_indexes[idx-1]] != items[d_indexes[idx]]);
+    //    });
+    thrust::host_vector<int> map_indexes(count);
+    int* d_map_indexes = map_indexes.data();
+    int* d_nend = thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), d_map_indexes,
+        [items, nulls, d_indexes, d_values] (int idx) {
             if( idx==0 )
             {
                 d_values[0] = 0;
-                return;
+                return true;
             }
             bool lhs_null = is_item_null(nulls,idx-1);
             bool rhs_null = is_item_null(nulls,idx);
+            bool isunique = true;
             if( lhs_null || rhs_null )
-                d_values[idx] = (int)(lhs_null != rhs_null);
+                isunique = (lhs_null != rhs_null);
             else
-                d_values[idx] = (int)(items[d_indexes[idx-1]] != items[d_indexes[idx]]);
+                isunique = (items[d_indexes[idx-1]] != items[d_indexes[idx]]);
+            d_values[idx] = (int)isunique;
+            return isunique;
         });
-    int ucount = thrust::reduce(thrust::host, d_values, d_values+count) +1;
+    
+    //int ucount = thrust::reduce(thrust::host, d_values, d_values+count) +1;
+    int ucount = (int)(d_nend - d_map_indexes);
+    // make a copy of just the unique values
     thrust::host_vector<int> keys_indexes(ucount);
-    thrust::unique_copy(thrust::host, indexes.begin(), indexes.end(), keys_indexes.begin(),
-        [items, nulls] ( int lhs, int rhs ) {
-            bool lhs_null = is_item_null(nulls,lhs);
-            bool rhs_null = is_item_null(nulls,rhs);
-            if( lhs_null || rhs_null )
-                return lhs_null==rhs_null;
-            return items[lhs]==items[rhs];
-        });
+    //thrust::unique_copy(thrust::host, indexes.begin(), indexes.end(), keys_indexes.begin(),
+    //    [items, nulls] ( int lhs, int rhs ) {
+    //        bool lhs_null = is_item_null(nulls,lhs);
+    //        bool rhs_null = is_item_null(nulls,rhs);
+    //        if( lhs_null || rhs_null )
+    //            return lhs_null==rhs_null;
+    //        return items[lhs]==items[rhs];
+    //    });
+    // next 3 lines replace unique above but avoids a comparison and operates only on integers
+    //thrust::host_vector<int> map_indexes(ucount);
+    //thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), map_indexes.begin(), [d_values] (int idx) { return (idx==0) || d_values[idx]; });
+    //thrust::gather( map_indexes.begin(), map_indexes.end(), indexes.begin(), keys_indexes.begin() );
+    thrust::gather( d_map_indexes, d_nend, indexes.begin(), keys_indexes.begin() );
+    // scan will produce the resulting values
     thrust::inclusive_scan(thrust::host, d_values, d_values+count, d_values);
+    // sort will put them in the correct order
     thrust::sort_by_key(thrust::host, indexes.begin(), indexes.end(), d_values);
+    // gather the keys for this category
     impl.create_keys(items,keys_indexes.data(),ucount,false,_keys);
-
+    // just make a copy of the nulls bitmask
     if( nulls )
     {
         size_t byte_count = (count+7)/8;
@@ -317,7 +348,7 @@ inline category<T>* category<T,Impl>::add_keys( const T* items, size_t count ) /
 }
 
 template<typename T, class Impl>
-inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count ) // remove null key too?
+inline category<T>* category<T,Impl>::remove_keys( const T* items, size_t count ) // how to remove null key too?
 {
     size_t kcount = keys_size();
     if( count==0 || kcount==0 )

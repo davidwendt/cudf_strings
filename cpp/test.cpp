@@ -58,6 +58,10 @@ template<typename T>
 void testcat( const T* data1, const T* data2 )
 {
     std::cout << "-----------------\n";
+    for( int idx=0; idx < 9; ++idx )
+        std::cout << data1[idx] << " ";
+    std::cout << "\n";
+
     cudf::category<T> cat( data1, 9 );
     const int* values = cat.values();
     int count = (int)cat.size();
@@ -66,7 +70,10 @@ void testcat( const T* data1, const T* data2 )
     printValues(values,count);
 
     // add keys
-    std::cout << " add_keys\n";
+    std::cout << " add_keys: ";
+    for( int idx=0; idx < 4; ++idx )
+        std::cout << data2[idx] << " ";
+    std::cout << "\n";
     cudf::category<T>* addcat = cat.add_keys( data2, 4 );
     printKeys(*addcat);
     printValues(addcat->values(),addcat->size());
@@ -80,14 +87,20 @@ void testcat( const T* data1, const T* data2 )
     delete addcat;
 
     // remove keys
-    std::cout << " remove_keys\n";
+    std::cout << " remove_keys: ";
+    for( int idx=2; idx < 4; ++idx )
+        std::cout << data2[idx] << " ";
+    std::cout << "\n";
     cudf::category<T>* rmvcat = cat.remove_keys( data2+2, 2 );
     printKeys(*rmvcat);
     printValues(rmvcat->values(),rmvcat->size());
     delete rmvcat;
 
     // set keys
-    std::cout << " set_keys\n";
+    std::cout << " set_keys: ";
+    for( int idx=0; idx < 4; ++idx )
+        std::cout << data2[idx] << " ";
+    std::cout << "\n";
     cudf::category<T>* setcat = cat.set_keys( data2, 4 );
     printKeys(*setcat);
     printValues(setcat->values(),setcat->size());
