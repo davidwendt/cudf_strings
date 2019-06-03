@@ -7,7 +7,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-// nvcc -w -std=c++11 --expt-extended-lambda test_scale.cpp -o test_scale
+// nvcc -w -std=c++11 --expt-extended-lambda test_scale.cpp src/category.cpp -o test_scale
 
 double GetTime()
 {

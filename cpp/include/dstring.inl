@@ -1,5 +1,6 @@
 
 #include <cstring>
+#include <iostream>
 
 namespace cudf
 {
@@ -34,6 +35,13 @@ inline bool dstring::operator<(const dstring& rhs) const
     if( strncmp(_data,rhs._data,minlen) < 0 )
         return true;
     return minlen == size();
+}
+
+// this needed to do cout on dstring object
+std::ostream& operator<<(std::ostream& os, const dstring& ds )
+{
+    os << ds.data();
+    return os;
 }
 
 }

@@ -4,10 +4,9 @@
 #include <vector>
 #include <string>
 #include <typeinfo>
-#include "include/dstring.h"
 #include "include/category.h"
 
-// nvcc -w -std=c++11 --expt-extended-lambda test.cpp -o test
+// nvcc -w -std=c++11 --expt-extended-lambda test.cpp src/category.cpp -o test
 
 void printMap( const char* title, int* pMap, int count )
 {
@@ -25,12 +24,6 @@ void printValues( const int* values, int count )
     printf("\n");
 }
 
-// this needed to do cout on dstring object
-std::ostream& operator<<(std::ostream& os, const cudf::dstring& ds )
-{
-    os << ds.data();
-    return os;
-}
 
 int g_ivals[] = { 4,1,2,3,2,1,4,1,1 };
 int g_ivals2[] = { 2,4,3,0 };
@@ -133,28 +126,15 @@ void testcat( const T* data1, const T* data2 )
     delete mrgcat;
 }
 
-void test_dstring()
-{
-    // create dstring objects from the g_svals
-    std::vector<cudf::dstring> dstrs1, dstrs2;
-    for( int idx=9; idx > 0; --idx ) // copying backwards just for kicks
-        dstrs1.push_back( {g_svals[idx-1].c_str(), g_svals[idx-1].length()+1 } ); //+1 for terminator
-    for( int idx=0; idx < 4; ++idx )
-        dstrs2.push_back( {g_svals2[idx].c_str(), g_svals2[idx].length()+1 } );
-    
-    // memory for the dstring's are held in the custr vars and freed when this method ends
-    testcat<cudf::dstring>( dstrs1.data(), dstrs2.data() );
-}
 
 int main( int argc, const char** argv )
 {
     testcat<int>( g_ivals, g_ivals2 );
-    testcat<float>( g_fvals, g_fvals2 );
-    testcat<std::string>( g_svals, g_svals2 );
-    test_dstring();
+    //testcat<float>( g_fvals, g_fvals2 );
+    //testcat<std::string>( g_svals, g_svals2 );
 
-    testcat<long>( g_lvals, g_lvals2 );
-    testcat<double>( g_dvals, g_dvals2 );
+    //testcat<long>( g_lvals, g_lvals2 );
+    //testcat<double>( g_dvals, g_dvals2 );
 
     return 0;
 }
