@@ -102,6 +102,10 @@ void testcat( const T* data1, const T* data2 )
     cudf::category<T>* nullcat = cat.set_keys( nullptr, 0 );
     std::cout << " null keyset size = " << nullcat->keys_size() << "\n";
     printValues(nullcat->values(),nullcat->size());
+    std::cout << " set_keys on nullset: ";
+    for( int idx=0; idx < 4; ++idx )
+        std::cout << data2[idx] << " ";
+    std::cout << "\n";
     setcat = nullcat->set_keys( data2, 4 );
     printKeys(*setcat);
     printValues(setcat->values(),setcat->size());

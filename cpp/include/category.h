@@ -38,10 +38,10 @@ public:
     int* get_indexes_for(T key);
     int* get_indexes_for_null_key();
 
-    category<T>* add_keys( const T* items, size_t count, BYTE* nulls=nullptr );
-    category<T>* remove_keys( const T* items, size_t count, BYTE* nulls=nullptr );
+    category<T>* add_keys( const T* items, size_t count, const BYTE* nulls=nullptr );
+    category<T>* remove_keys( const T* items, size_t count, const BYTE* nulls=nullptr );
     category<T>* remove_unused_keys();
-    category<T>* set_keys( const T* items, size_t count );
+    category<T>* set_keys( const T* items, size_t count, const BYTE* nulls=nullptr );
     category<T>* merge( category<T>& cat );
 
     category<T>* gather(const int* indexes, size_t count );

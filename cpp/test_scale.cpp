@@ -86,8 +86,8 @@ int main( int argc, const char** argv )
     std::random_device rd;
     std::mt19937 mt(rd());
 
-    //test_int(mt);
-    test_string(mt);
+    test_int(mt);
+    //test_string(mt);
 
     return 0;
 }
