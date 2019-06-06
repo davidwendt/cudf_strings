@@ -13,18 +13,8 @@
 #include <thrust/tabulate.h>
 #include "../include/category.h"
 
-void printValues( const int* values, int count );
 
-void printInts( const char* title, int* pMap, int count )
-{
-    if( title )
-        printf("%s",title);
-    for( int i=0; i < count; ++i )
-        printf("%2d ",pMap[i]);
-    printf("\n");
-}
-
-
+//
 bool is_item_null( const BYTE* nulls, int idx )
 {
     return nulls && ((nulls[idx/8] & (1 << (idx % 8)))==0);
@@ -272,12 +262,19 @@ const BYTE* category<T>::nulls_bitmask()
 }
 
 template<typename T>
+bool category<T>::has_nulls()
+{
+    return count_nulls(pImpl->get_nulls(),pImpl->values_count())>0;
+}
+
+template<typename T>
 void category<T>::print(const char* prefix, const char* delimiter)
 {
-    std::cout << prefix;
     const T* d_keys = pImpl->get_keys();
-    const BYTE* d_nulls = pImpl->get_nulls();
 
+    std::cout << prefix;
+    if( pImpl->keys_count()==0 )
+        std::cout << "<no keys>";
     for( size_t idx=0; idx < pImpl->keys_count(); ++idx )
     {
         if( idx || !pImpl->bkeyset_includes_null )
@@ -289,7 +286,10 @@ void category<T>::print(const char* prefix, const char* delimiter)
     std::cout << "\n";
 
     const int* d_values = pImpl->get_values();
+    const BYTE* d_nulls = pImpl->get_nulls();
     std::cout << prefix;
+    if( pImpl->values_count()==0 )
+        std::cout << "<no values>";
     for( size_t idx=0; idx < pImpl->values_count(); ++idx )
     {
         if( is_item_null(d_nulls,idx) )
@@ -323,29 +323,27 @@ int category<T>::get_index_for(T key)
 }
 
 template<typename T>
-int* category<T>::get_indexes_for(T key)
+size_t category<T>::get_indexes_for(T key, int* results)
 {
     int index = get_index_for(key);
     const int* d_values = pImpl->get_values();
-    int count = thrust::count( d_values, d_values + size(), index);
-    int* results = new int[count];
-    thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), results, 
+    size_t count = size();
+    int* nend = thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), results, 
         [index, d_values] (int idx) { return d_values[idx]==index; });
-    return results;
+    return (size_t)(nend - results);
 }
 
 template<typename T>
-int* category<T>::get_indexes_for_null_key()
+size_t category<T>::get_indexes_for_null_key(int* results)
 {
     if( pImpl->get_nulls()==nullptr )
-        return nullptr; // there are no null entries
+        return 0; // there are no null entries
     int index = 0; // null key is always index 0
     const int* d_values = pImpl->get_values();
-    int count = thrust::count( d_values, d_values + size(), index);
-    int* results = new int[count];
+    size_t count = thrust::count( d_values, d_values + size(), index);
     thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), results, 
         [index, d_values] (int idx) { return d_values[idx]==index; });
-    return results;
+    return count;
 }
 
 template<typename T>
@@ -864,7 +862,7 @@ category<T>* category<T>::gather(const int* indexes, size_t count )
         BYTE* d_new_nulls = result->pImpl->get_nulls(count);
         thrust::for_each_n( thrust::host, thrust::make_counting_iterator<size_t>(0), count,
             [d_nulls, indexes, d_new_nulls] (size_t idx) {
-                int flag = (int)indexes[idx]!=0; //is_item_null(d_nulls,indexes[idx]);
+                int flag = (int)indexes[idx]!=0;
                 d_new_nulls[idx/8] |= (flag << (idx % 8));
             });
     }
@@ -902,8 +900,8 @@ category<T>* category<T>::gather_values(const int* indexes, size_t count )
 // pre-define these types
 template class category<int>;
 template class category<float>;
-//template class category<long>;
-//template class category<double>;
-//template class category<std::string>;
+template class category<long>;
+template class category<double>;
+template class category<std::string>;
 
 }

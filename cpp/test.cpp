@@ -9,20 +9,11 @@
 // nvcc -w -std=c++11 --expt-extended-lambda test.cpp src/category.cpp -o test
 bool is_item_null( const BYTE* nulls, int idx );
 
-void printMap( const char* title, int* pMap, int count )
-{
-    if( title )
-        printf("%s:\n ",title);
-    for( int i=0; i < count; ++i )
-        printf("%d:%d ",i,pMap[i]);
-    printf("\n");
-}
-
 void printValues( const int* values, int count )
 {
     for( int i=0; i < count; ++i )
-        printf(" %d",values[i]);
-    printf("\n");
+        std::cout << " " << values[i];
+    std::cout << "\n";
 }
 
 
@@ -241,9 +232,10 @@ int main( int argc, const char** argv )
 {
     testcat<int>( g_ivals, g_ivals2 );
     testnulls<int>( g_ivals, g_ivals2 );
-    testcat<float>( g_fvals, g_fvals2 );
-    testnulls<float>( g_fvals, g_fvals2 );
+    //testcat<float>( g_fvals, g_fvals2 );
+    //testnulls<float>( g_fvals, g_fvals2 );
     //testcat<std::string>( g_svals, g_svals2 );
+    //testnulls<std::string>( g_svals, g_svals2 );
 
     //testcat<long>( g_lvals, g_lvals2 );
     //testcat<double>( g_dvals, g_dvals2 );

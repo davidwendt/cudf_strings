@@ -28,6 +28,7 @@ public:
     const T* keys();
     const int* values();
     const BYTE* nulls_bitmask();
+    bool has_nulls();
 
     void print(const char* prefix="", const char* delimiter=" ");
 
@@ -35,8 +36,8 @@ public:
     bool is_value_null(int idx);
 
     int get_index_for(T key);
-    int* get_indexes_for(T key);
-    int* get_indexes_for_null_key();
+    size_t get_indexes_for(T key, int* result);
+    size_t get_indexes_for_null_key(int* result);
 
     category<T>* add_keys( const T* items, size_t count, const BYTE* nulls=nullptr );
     category<T>* remove_keys( const T* items, size_t count, const BYTE* nulls=nullptr );
