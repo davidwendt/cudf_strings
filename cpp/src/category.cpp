@@ -13,7 +13,6 @@
 #include <thrust/tabulate.h>
 #include "../include/category.h"
 
-
 //
 bool is_item_null( const BYTE* nulls, int idx )
 {
@@ -29,7 +28,7 @@ size_t count_nulls( const BYTE* nulls, size_t count )
     return result;
 }
 
-namespace cudf
+namespace custr
 {
 
 template<typename T>
@@ -141,6 +140,8 @@ category<T>::category( const T* items, size_t count, BYTE* nulls )
             : pImpl(nullptr)
 {
     pImpl = new category_impl<T>;
+    if( !items || !count )
+        return; // empty category
 
     thrust::host_vector<int> indexes(count);
     thrust::sequence(indexes.begin(), indexes.end()); // 0,1,2,3,4,5,6,7,8
@@ -173,7 +174,7 @@ category<T>::category( const T* items, size_t count, BYTE* nulls )
                 d_values[idx] = (int)(items[d_indexes[idx-1]] != items[d_indexes[idx]]);
         });
     int ucount = thrust::reduce(thrust::host, d_values, d_values+count) +1;
-#else        
+#else
     //printf("(new way)\n");
     thrust::host_vector<int> map_indexes(count);
     int* d_map_indexes = map_indexes.data();
@@ -195,9 +196,9 @@ category<T>::category( const T* items, size_t count, BYTE* nulls )
             return isunique;
         });
     int ucount = (int)(d_map_nend - d_map_indexes);
-#endif    
+#endif
     thrust::host_vector<int> keys_indexes(ucount);
-#ifdef OLDWAY    
+#ifdef OLDWAY
     // make a copy of just the unique values
     thrust::unique_copy(thrust::host, indexes.begin(), indexes.end(), keys_indexes.begin(),
         [items, nulls] ( int lhs, int rhs ) {
@@ -211,9 +212,9 @@ category<T>::category( const T* items, size_t count, BYTE* nulls )
     //thrust::host_vector<int> map_indexes(ucount);
     //thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), map_indexes.begin(), [d_values] (int idx) { return (idx==0) || d_values[idx]; });
     //thrust::gather( map_indexes.begin(), map_indexes.end(), indexes.begin(), keys_indexes.begin() );
-#else    
+#else
     thrust::gather( d_map_indexes, d_map_nend, indexes.begin(), keys_indexes.begin() );
-#endif    
+#endif
     // scan will produce the resulting values
     thrust::inclusive_scan(thrust::host, d_values, d_values+count, d_values);
     // sort will put them in the correct order
@@ -328,7 +329,7 @@ size_t category<T>::get_indexes_for(T key, int* results)
     int index = get_index_for(key);
     const int* d_values = pImpl->get_values();
     size_t count = size();
-    int* nend = thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), results, 
+    int* nend = thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), results,
         [index, d_values] (int idx) { return d_values[idx]==index; });
     return (size_t)(nend - results);
 }
@@ -341,7 +342,7 @@ size_t category<T>::get_indexes_for_null_key(int* results)
     int index = 0; // null key is always index 0
     const int* d_values = pImpl->get_values();
     size_t count = thrust::count( d_values, d_values + size(), index);
-    thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), results, 
+    thrust::copy_if( thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), results,
         [index, d_values] (int idx) { return d_values[idx]==index; });
     return count;
 }
@@ -383,7 +384,7 @@ void category<T>::gather_type( const int* indexes, size_t count, T* results, BYT
 template<typename T>
 category<T>* category<T>::add_keys( const T* items, size_t count, const BYTE* nulls )
 {
-    if( count==0 )
+    if( !items || !count )
         return copy();
     category<T>* result = new category<T>;
     size_t kcount = keys_size();
@@ -395,7 +396,7 @@ category<T>* category<T>::add_keys( const T* items, size_t count, const BYTE* nu
     T* d_both_keys = both_keys.data();
     thrust::copy( d_keys, d_keys + kcount, d_both_keys );
     thrust::copy( items, items + count, d_both_keys + kcount );
-    thrust::host_vector<int> xvals(both_count); 
+    thrust::host_vector<int> xvals(both_count);
     int* d_xvals = xvals.data(); // build vector like: 0,...,(kcount-1),-1,...,-count
     thrust::tabulate(thrust::host, d_xvals, d_xvals + both_count,
         [kcount] (int idx) { return (idx < kcount) ? idx : (kcount - idx - 1); });
@@ -404,7 +405,7 @@ category<T>* category<T>::add_keys( const T* items, size_t count, const BYTE* nu
     thrust::sequence( indexes.begin(), indexes.end() );
     int* d_indexes = indexes.data();
     // stable-sort preserves order for keys that match
-    thrust::stable_sort_by_key( d_indexes, d_indexes + both_count, d_xvals, 
+    thrust::stable_sort_by_key( d_indexes, d_indexes + both_count, d_xvals,
         [d_both_keys, kcount, include_null, nulls] (int lhs, int rhs) {
             bool lhs_null = ((lhs==0) && include_null) || ((lhs >= kcount) && is_item_null(nulls,lhs-kcount));
             bool rhs_null = ((rhs==0) && include_null) || ((rhs >= kcount) && is_item_null(nulls,rhs-kcount));
@@ -455,6 +456,8 @@ category<T>* category<T>::add_keys( const T* items, size_t count, const BYTE* nu
 template<typename T>
 category<T>* category<T>::remove_keys( const T* items, size_t count, const BYTE* nulls )
 {
+    if( !items || !count )
+        return copy();
     category<T>* result = new category<T>;
     size_t kcount = keys_size();
     size_t both_count = kcount + count;
@@ -463,7 +466,7 @@ category<T>* category<T>::remove_keys( const T* items, size_t count, const BYTE*
     T* d_both_keys = both_keys.data();
     thrust::copy( d_keys, d_keys + kcount, d_both_keys );         // these keys
     thrust::copy( items, items + count, d_both_keys + kcount );  // and those keys
-    thrust::host_vector<int> xvals(both_count); 
+    thrust::host_vector<int> xvals(both_count);
     int* d_xvals = xvals.data(); // build vector like: 0,...,(kcount-1),-1,...,-count
     thrust::tabulate(thrust::host, d_xvals, d_xvals + both_count, [kcount] (int idx) { return (idx < kcount) ? idx : (kcount - idx - 1); });
     // compute the new keyset by doing sort/unique
@@ -520,7 +523,7 @@ category<T>* category<T>::remove_keys( const T* items, size_t count, const BYTE*
         //thrust::fill( d_yvals, d_yvals + kcount, -1 );
         thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)unique_count,
             [d_yvals, d_xvals] (int idx) { d_yvals[d_xvals[idx]] = idx; });
-        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)vcount, 
+        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)vcount,
             [d_values, d_yvals, d_new_values] (int idx) {
                 int value = d_values[idx];
                 d_new_values[idx] = ( value < 0 ? value : d_yvals[value] );
@@ -608,7 +611,7 @@ category<T>* category<T>::set_keys( const T* items, size_t count, const BYTE* nu
     int* d_indexes = indexes.data();
     bool include_null = pImpl->bkeyset_includes_null;
     // stable-sort preserves order for keys that match
-    thrust::stable_sort_by_key( d_indexes, d_indexes + both_count, d_xvals, 
+    thrust::stable_sort_by_key( d_indexes, d_indexes + both_count, d_xvals,
         [d_both_keys, kcount, include_null, nulls] (int lhs, int rhs) {
             bool lhs_null = ((lhs==0) && include_null) || ((lhs >= kcount) && is_item_null(nulls,lhs-kcount));
             bool rhs_null = ((rhs==0) && include_null) || ((rhs >= kcount) && is_item_null(nulls,rhs-kcount));
@@ -671,7 +674,7 @@ category<T>* category<T>::set_keys( const T* items, size_t count, const BYTE* nu
             });
         // create new values using the map in yvals
         int* d_new_values = result->pImpl->get_values(vcount);
-        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)vcount, 
+        thrust::for_each_n( thrust::host, thrust::make_counting_iterator<int>(0), (int)vcount,
             [d_values, d_yvals, d_new_values] (int idx) {
                 int value = d_values[idx];
                 d_new_values[idx] = ( value < 0 ? value : d_yvals[value] );
@@ -684,7 +687,7 @@ category<T>* category<T>::set_keys( const T* items, size_t count, const BYTE* nu
             result->pImpl->reset_nulls(); // null has been removed
         else
             result->pImpl->bkeyset_includes_null = include_new_null; // null has been added
-            
+
     }
     return result;
 }
@@ -695,12 +698,12 @@ category<T>* category<T>::merge( category<T>& cat )
     // first, copy keys so we can sort/unique
     size_t kcount = keys_size();
     size_t count = kcount + cat.keys_size();
-    
+
     const T* d_keys = keys();
     const T* d_catkeys = cat.pImpl->get_keys();
     bool include_null = pImpl->bkeyset_includes_null;
     bool catinclude_null = cat.pImpl->bkeyset_includes_null;
-    
+
     thrust::host_vector<T> keyset(count);
     T* d_keyset = keyset.data();
     thrust::copy( d_keys, d_keys + kcount, d_keyset );
@@ -829,7 +832,7 @@ category<T>* category<T>::gather_and_remap(const int* indexes, size_t count)
     thrust::gather( thrust::host, indexes, indexes + count, d_yvals, d_new_values );
     // also need to gather nulls
     //const BYTE* d_nulls = pImpl->get_nulls();
-    if( pImpl->bkeyset_includes_null )
+    if( pImpl->bkeyset_includes_null && indexes )
     {
         BYTE* d_new_nulls = result->pImpl->get_nulls(count);
         thrust::for_each_n( thrust::host, thrust::make_counting_iterator<size_t>(0), count,
@@ -857,7 +860,7 @@ category<T>* category<T>::gather(const int* indexes, size_t count )
     thrust::copy( indexes, indexes + count, d_new_values );
 
     const BYTE* d_nulls = pImpl->get_nulls();
-    if( d_nulls )
+    if( d_nulls && indexes )
     {
         BYTE* d_new_nulls = result->pImpl->get_nulls(count);
         thrust::for_each_n( thrust::host, thrust::make_counting_iterator<size_t>(0), count,
@@ -885,7 +888,7 @@ category<T>* category<T>::gather_values(const int* indexes, size_t count )
     thrust::gather( indexes, indexes + count, d_values, d_new_values );
 
     const BYTE* d_nulls = pImpl->get_nulls();
-    if( d_nulls )
+    if( d_nulls && indexes )
     {
         BYTE* d_new_nulls = result->pImpl->get_nulls(count);
         thrust::for_each_n( thrust::host, thrust::make_counting_iterator<size_t>(0), count,
@@ -899,9 +902,12 @@ category<T>* category<T>::gather_values(const int* indexes, size_t count )
 
 // pre-define these types
 template class category<int>;
-template class category<float>;
+template<> const char* category<int>::get_type_name() { return "int32"; };
 template class category<long>;
+template<> const char* category<long>::get_type_name() { return "int64"; };
+template class category<float>;
+template<> const char* category<float>::get_type_name() { return "float32"; };
 template class category<double>;
-template class category<std::string>;
+template<> const char* category<double>::get_type_name() { return "float64"; };
 
 }
