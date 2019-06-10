@@ -24,7 +24,7 @@ class category : base_type
 
 public:
 
-    category( const T* items, size_t count, BYTE* nulls=nullptr );
+    category( const T* items, size_t count, BYTE* nulls=nullptr, bool devmem=true );
     ~category();
 
     category<T>* copy();
@@ -57,7 +57,8 @@ public:
     category<T>* gather_and_remap(const int* indexes, size_t count );
     category<T>* gather_values(const int* indexes, size_t count );
 
-    void to_type( T* results, BYTE* nulls=nullptr ); // must be able to hold size() entries
+    // results/nulls must be able to hold size() entries
+    void to_type( T* results, BYTE* nulls=nullptr ); 
     void gather_type( const int* indexes, size_t count, T* results, BYTE* nulls=nullptr );
 };
 

@@ -1,7 +1,7 @@
 import pynicucategory
 
-def from_ndarray(arr):
-    rtn = pynicucategory.n_createCategoryFromBuffer(arr)
+def from_ndarray(arr,nulls):
+    rtn = pynicucategory.n_createCategoryFromBuffer(arr,nulls)
     if rtn is not None:
         rtn = cucategory(rtn)
     return rtn

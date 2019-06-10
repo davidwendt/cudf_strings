@@ -112,12 +112,12 @@ struct create_functor
 {
     void* data;
     size_t count;
-    create_functor(void* data, size_t count) : data(data), count(count) {}
-    template<typename T>
+    BYTE* nulls;
+        template<typename T>
     void* operator()()
     {
         T* items = reinterpret_cast<T*>(data);
-        auto result = new custr::category<T>(items,count);
+        auto result = new custr::category<T>(items,count,nulls);
         result->print();
         return reinterpret_cast<void*>(result);
     }
@@ -133,16 +133,18 @@ struct base_functor
 //
 static PyObject* n_createCategoryFromBuffer( PyObject* self, PyObject* args )
 {
-    PyObject* pyobj = PyTuple_GetItem(args,0); // only one parm expected
-    DataHandler data(pyobj);
+    PyObject* pydata = PyTuple_GetItem(args,0);
+    DataHandler data(pydata);
     if( data.is_error() )
     {
         PyErr_Format(PyExc_ValueError,"category.create: %s", data.get_error_text());
         Py_RETURN_NONE;
     }
+    PyObject* pynulls = PyTuple_GetItem(args,1);
+    DataHandler nulls(pynulls);
     void* result;
     Py_BEGIN_ALLOW_THREADS
-    result = type_dispatcher( data.get_dtype_name(), create_functor(data.get_values(),data.get_count()) );
+    result = type_dispatcher( data.get_dtype_name(), create_functor{data.get_values(),data.get_count(),reinterpret_cast<BYTE*>(nulls.get_values())} );
     Py_END_ALLOW_THREADS
     return PyLong_FromVoidPtr(result);
 }
