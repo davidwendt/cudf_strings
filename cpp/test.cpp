@@ -74,7 +74,7 @@ void testcat( const T* data1, const T* data2 )
     std::cout << "-----------------\n";
     printType(data1,9);
 
-    custr::category<T> cat( data1, 9, nullptr, false );
+    custr::category<T> cat( data1, 9 );
     std::cout << typeid(T).name() << " cat("<< cat.keys_size() << "," << cat.size() << ")\n";
     cat.print();
 

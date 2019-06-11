@@ -5,7 +5,8 @@ find_package(CUDA REQUIRED)
 
 #
 set(LIB_CATEGORY_SOURCES
-src/category.cpp
+#src/category.cpp
+src/category.cu
 )
 
 set(LIB_CATEGORY_HEADERS 

@@ -15,22 +15,18 @@
 #include "../include/category.h"
 
 #define BYTES_FROM_BITS(c) ((c+7)/8)
+
 //
 __host__ __device__ bool is_item_null( const BYTE* nulls, int idx )
 {
     return nulls && ((nulls[idx/8] & (1 << (idx % 8)))==0);
 }
 
-size_t count_nulls( const BYTE* nulls, size_t count, bool bdevmem=true )
+size_t count_nulls( const BYTE* nulls, size_t count )
 {
     if( !nulls || !count )
         return 0;
-    size_t result = 0;
-    if( bdevmem )
-        result = thrust::count_if( thrust::device, thrust::make_counting_iterator<size_t>(0), thrust::make_counting_iterator<size_t>(count),
-            [nulls] __device__ (size_t idx) { return ((nulls[idx/8] & (1 << (idx % 8)))==0); });
-    else
-        result = thrust::count_if( thrust::host, thrust::make_counting_iterator<size_t>(0), thrust::make_counting_iterator<size_t>(count),
+    size_t result = thrust::count_if( thrust::device, thrust::make_counting_iterator<size_t>(0), thrust::make_counting_iterator<size_t>(count),
             [nulls] __device__ (size_t idx) { return ((nulls[idx/8] & (1 << (idx % 8)))==0); });
     return result;
 }
@@ -108,16 +104,13 @@ public:
         return _bitmask.data().get();
     }
 
-    void set_nulls( const BYTE* nulls, size_t count, bool bdevmem=true )
+    void set_nulls( const BYTE* nulls, size_t count )
     {
         if( nulls==nullptr || count==0 )
             return;
         size_t byte_count = (count+7)/8;
         _bitmask.resize(byte_count);
-        if( !bdevmem )
-            cudaMemcpy(_bitmask.data().get(),nulls,byte_count,cudaMemcpyHostToDevice);
-        else
-            cudaMemcpyAsync(_bitmask.data().get(),nulls,byte_count,cudaMemcpyDeviceToDevice);
+        cudaMemcpyAsync(_bitmask.data().get(),nulls,byte_count,cudaMemcpyDeviceToDevice);
         bkeyset_includes_null = count_nulls(nulls,count)>0;
     }
 
@@ -148,8 +141,8 @@ category<T>::~category()
 template<typename T>
 struct sort_functor
 {
-    T* items;
-    BYTE* nulls;
+    const T* items;
+    const BYTE* nulls;
     __device__ bool operator()(int lhs, int rhs)
     {
         bool lhs_null = is_item_null(nulls,lhs);
@@ -163,8 +156,8 @@ struct sort_functor
 template<typename T>
 struct copy_unique_functor
 {
-    T* items;
-    BYTE* nulls;
+    const T* items;
+    const BYTE* nulls;
     int* indexes;
     int* values;
     __device__ bool operator()(int idx)
@@ -188,36 +181,22 @@ struct copy_unique_functor
 };
 
 template<typename T>
-category<T>::category( const T* items, size_t count, BYTE* nulls, bool bdevmem )
+category<T>::category( const T* items, size_t count, const BYTE* nulls )
             : pImpl(nullptr)
 {
     pImpl = new category_impl<T>;
     if( !items || !count )
         return; // empty category
 
-    T* d_items = const_cast<T*>(items);
-    BYTE* d_nulls = nulls;
-    if( !bdevmem )
-    {
-        cudaMalloc(&d_items,count*sizeof(T));
-        cudaMemcpy((void*)d_items,items,count*sizeof(T),cudaMemcpyHostToDevice);
-        if( nulls )
-        {
-            size_t byte_count = (count+7)/8;
-            cudaMalloc(&d_nulls, byte_count );
-            cudaMemcpy(d_nulls, nulls, byte_count, cudaMemcpyHostToDevice );
-        }
-    }
-
     thrust::device_vector<int> indexes(count);
     thrust::sequence(thrust::device, indexes.begin(), indexes.end()); // 0,1,2,3,4,5,6,7,8
-    thrust::sort(thrust::device, indexes.begin(), indexes.end(), sort_functor<T>{d_items,nulls} );
+    thrust::sort(thrust::device, indexes.begin(), indexes.end(), sort_functor<T>{items,nulls} );
     int* d_values = pImpl->get_values(count);
     int* d_indexes = indexes.data().get();
     thrust::device_vector<int> map_indexes(count);
     int* d_map_indexes = map_indexes.data().get();
     int* d_map_nend = thrust::copy_if( thrust::device, thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), 
-                                       d_map_indexes, copy_unique_functor<T>{d_items, nulls, d_indexes, d_values} );
+                                       d_map_indexes, copy_unique_functor<T>{items, nulls, d_indexes, d_values} );
     int ucount = (int)(d_map_nend - d_map_indexes);
     thrust::device_vector<int> keys_indexes(ucount); // get the final indexes to the unique keys
     thrust::gather( thrust::device, d_map_indexes, d_map_nend, indexes.begin(), keys_indexes.begin() );
@@ -226,16 +205,10 @@ category<T>::category( const T* items, size_t count, BYTE* nulls, bool bdevmem )
     // sort will put them in the correct order
     thrust::sort_by_key(thrust::device, indexes.begin(), indexes.end(), d_values);
     // gather the keys for this category
-    pImpl->init_keys(d_items,keys_indexes.data().get(),ucount);
+    pImpl->init_keys(items,keys_indexes.data().get(),ucount);
     // just make a copy of the nulls bitmask
-    if( d_nulls )
-        pImpl->set_nulls(d_nulls,count,bdevmem);
-    if( !bdevmem )
-    {
-        cudaFree((void*)d_items);
-        if( d_nulls )
-            cudaFree(d_nulls);
-    }
+    if( nulls )
+        pImpl->set_nulls(nulls,count);
 }
 
 template<typename T>
@@ -417,6 +390,53 @@ void category<T>::gather_type( const int* d_indexes, size_t count, T* d_results,
 }
 
 template<typename T>
+struct sort_update_keys_fn
+{
+    const T* keys;
+    size_t kcount;
+    bool include_null;
+    const BYTE* nulls;
+    __device__ bool operator()(int lhs, int rhs)
+    {
+        bool lhs_null = ((lhs==0) && include_null) || ((lhs >= kcount) && is_item_null(nulls,lhs-kcount));
+        bool rhs_null = ((rhs==0) && include_null) || ((rhs >= kcount) && is_item_null(nulls,rhs-kcount));
+        if( lhs_null || rhs_null )
+            return !rhs_null; // sorts: null < non-null
+        return keys[lhs] < keys[rhs];
+    }
+};
+
+template<typename T>
+struct unique_update_keys_fn
+{
+    const T* keys;
+    size_t kcount;
+    bool include_null;
+    const BYTE* nulls;
+    __device__ bool operator()(int lhs, int rhs)
+    {
+        bool lhs_null = ((lhs==0) && include_null) || ((lhs >= kcount) && is_item_null(nulls,lhs-kcount));
+        bool rhs_null = ((rhs==0) && include_null) || ((rhs >= kcount) && is_item_null(nulls,rhs-kcount));
+        if( lhs_null || rhs_null )
+            return lhs_null==rhs_null;
+        return keys[lhs]==keys[rhs];
+    }
+};
+
+// this is almost a straight gather; maybe gather_if?
+struct remap_values_fn
+{
+    const int* values;
+    const int* map;
+    int* new_values;
+    __device__ void operator()(size_t idx)
+    {
+        int value = values[idx];
+        new_values[idx] = (value < 0 ? value : map[value]);
+    }
+};
+
+template<typename T>
 category<T>* category<T>::add_keys( const T* items, size_t count, const BYTE* nulls )
 {
     if( !items || !count )
@@ -440,22 +460,10 @@ category<T>* category<T>::add_keys( const T* items, size_t count, const BYTE* nu
     thrust::sequence( thrust::device, indexes.begin(), indexes.end() );
     int* d_indexes = indexes.data().get();
     // stable-sort preserves order for keys that match
-    thrust::stable_sort_by_key( thrust::device, d_indexes, d_indexes + both_count, d_xvals,
-        [d_both_keys, kcount, include_null, nulls] __device__ (int lhs, int rhs) {
-            bool lhs_null = ((lhs==0) && include_null) || ((lhs >= kcount) && is_item_null(nulls,lhs-kcount));
-            bool rhs_null = ((rhs==0) && include_null) || ((rhs >= kcount) && is_item_null(nulls,rhs-kcount));
-            if( lhs_null || rhs_null )
-                return !rhs_null; // sorts: null < non-null
-            return d_both_keys[lhs] < d_both_keys[rhs];
-        });
-    auto nend = thrust::unique_by_key( thrust::device, d_indexes, d_indexes + both_count, d_xvals,
-        [d_both_keys, kcount, include_null, nulls] __device__ (int lhs, int rhs) {
-            bool lhs_null = ((lhs==0) && include_null) || ((lhs >= kcount) && is_item_null(nulls,lhs-kcount));
-            bool rhs_null = ((rhs==0) && include_null) || ((rhs >= kcount) && is_item_null(nulls,rhs-kcount));
-            if( lhs_null || rhs_null )
-                return lhs_null==rhs_null;
-            return d_both_keys[lhs]==d_both_keys[rhs];
-        });
+    thrust::stable_sort_by_key( thrust::device, d_indexes, d_indexes + both_count, d_xvals, 
+                                sort_update_keys_fn<T>{d_both_keys, kcount, include_null,nulls} );
+    auto nend = thrust::unique_by_key( thrust::device, d_indexes, d_indexes + both_count, d_xvals, 
+                                       unique_update_keys_fn<T>{d_both_keys, kcount, include_null,nulls} );
     size_t unique_count = nend.second - d_xvals;
     result->pImpl->init_keys(d_both_keys, d_indexes, unique_count);
     // done with keys
@@ -476,10 +484,7 @@ category<T>* category<T>::add_keys( const T* items, size_t count, const BYTE* nu
             });
         // apply new positions to new category values
         thrust::for_each_n( thrust::device, thrust::make_counting_iterator<size_t>(0), vcount,
-            [d_values, d_yvals, d_new_values] __device__ (size_t idx) {
-                int value = d_values[idx];
-                d_new_values[idx] = (value < 0 ? value : d_yvals[value]);
-            });
+                            remap_values_fn{d_values, d_yvals, d_new_values} );
     }
     // handle nulls
     result->pImpl->set_nulls( pImpl->get_nulls(), size() );
@@ -511,13 +516,7 @@ category<T>* category<T>::remove_keys( const T* items, size_t count, const BYTE*
     bool include_null = pImpl->bkeyset_includes_null;
     // stable-sort preserves order for keys that match
     thrust::stable_sort_by_key( thrust::device, d_indexes, d_indexes + both_count, d_xvals,
-        [d_both_keys, kcount, include_null, nulls] __device__ (int lhs, int rhs) {
-            bool lhs_null = ((lhs==0) && include_null) || ((lhs >= kcount) && is_item_null(nulls,lhs-kcount));
-            bool rhs_null = ((rhs==0) && include_null) || ((rhs >= kcount) && is_item_null(nulls,rhs-kcount));
-            if( lhs_null || rhs_null )
-                return !rhs_null; // sorts: null < non-null
-            return d_both_keys[lhs] < d_both_keys[rhs];
-        });
+                                sort_update_keys_fn<T>{d_both_keys, kcount, include_null,nulls} );
     size_t unique_count = both_count;
     {
         thrust::device_vector<int> map_indexes(both_count);
@@ -558,14 +557,10 @@ category<T>* category<T>::remove_keys( const T* items, size_t count, const BYTE*
         thrust::for_each_n( thrust::device, thrust::make_counting_iterator<int>(0), (int)unique_count,
             [d_yvals, d_xvals] __device__ (int idx) { d_yvals[d_xvals[idx]] = idx; });
         thrust::for_each_n( thrust::device, thrust::make_counting_iterator<int>(0), (int)vcount,
-            [d_values, d_yvals, d_new_values] __device__ (int idx) {
-                int value = d_values[idx];
-                d_new_values[idx] = ( value < 0 ? value : d_yvals[value] );
-            });
+                            remap_values_fn{d_values, d_yvals, d_new_values} );
     }
     // finally, handle the nulls
     // if null key is removed, then null values are abandoned (become -1)
-    // so the bitmask can become undefined perhaps
     const BYTE* d_nulls = pImpl->get_nulls();
     if( d_nulls )
     {
@@ -646,13 +641,7 @@ category<T>* category<T>::set_keys( const T* items, size_t count, const BYTE* nu
     bool include_null = pImpl->bkeyset_includes_null;
     // stable-sort preserves order for keys that match
     thrust::stable_sort_by_key( thrust::device, d_indexes, d_indexes + both_count, d_xvals,
-        [d_both_keys, kcount, include_null, nulls] __device__ (int lhs, int rhs) {
-            bool lhs_null = ((lhs==0) && include_null) || ((lhs >= kcount) && is_item_null(nulls,lhs-kcount));
-            bool rhs_null = ((rhs==0) && include_null) || ((rhs >= kcount) && is_item_null(nulls,rhs-kcount));
-            if( lhs_null || rhs_null )
-                return !rhs_null; // sorts: null < non-null
-            return d_both_keys[lhs] < d_both_keys[rhs];
-        });
+                                sort_update_keys_fn<T>{d_both_keys, kcount, include_null,nulls} );
     thrust::device_vector<int> map_indexes(both_count); // needed for gather methods
     int* d_map_indexes = map_indexes.data().get(); // indexes of keys from key1 not in key2
     int* d_copy_end = thrust::copy_if( thrust::device, thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(both_count), d_map_indexes,
@@ -683,13 +672,7 @@ category<T>* category<T>::set_keys( const T* items, size_t count, const BYTE* nu
     }
     // resolve final key-set
     auto d_unique_end = thrust::unique_by_key( thrust::device, d_indexes, d_indexes + both_count, d_xvals,
-        [d_both_keys, kcount, include_null, nulls] __device__ (int lhs, int rhs) {
-            bool lhs_null = ((lhs==0) && include_null) || ((lhs >= kcount) && is_item_null(nulls,lhs-kcount));
-            bool rhs_null = ((rhs==0) && include_null) || ((rhs >= kcount) && is_item_null(nulls,rhs-kcount));
-            if( lhs_null || rhs_null )
-                return lhs_null==rhs_null;
-            return d_both_keys[lhs]==d_both_keys[rhs];
-        });
+                                               unique_update_keys_fn<T>{d_both_keys, kcount, include_null,nulls} );
     size_t unique_count = d_unique_end.second - d_xvals;//both_count - matched;
     category<T>* result = new category<T>;
     result->pImpl->init_keys( d_both_keys, d_indexes, unique_count );
@@ -709,10 +692,7 @@ category<T>* category<T>::set_keys( const T* items, size_t count, const BYTE* nu
         // create new values using the map in yvals
         int* d_new_values = result->pImpl->get_values(vcount);
         thrust::for_each_n( thrust::device, thrust::make_counting_iterator<int>(0), (int)vcount,
-            [d_values, d_yvals, d_new_values] __device__ (int idx) {
-                int value = d_values[idx];
-                d_new_values[idx] = ( value < 0 ? value : d_yvals[value] );
-            });
+                            remap_values_fn{d_values, d_yvals, d_new_values} );
         // handles nulls
         bool include_new_null = (count_nulls(nulls,count)>0);
         if( include_null == include_new_null )
@@ -795,10 +775,7 @@ category<T>* category<T>::merge( category<T>& cat )
     {   // remap our values first
         const int* d_values = values();
         thrust::for_each_n( thrust::device, thrust::make_counting_iterator<int>(0), (int)size(),
-            [d_values, d_yvals, d_new_values] __device__ (int idx) {
-                int value = d_values[idx];
-                d_new_values[idx] = ( value < 0 ? value : d_yvals[value]);
-            });
+                            remap_values_fn{d_values, d_yvals, d_new_values} );
         d_new_values += size(); // point to the
         d_yvals += keys_size(); // next section
     }
@@ -806,10 +783,7 @@ category<T>* category<T>::merge( category<T>& cat )
     {   // remap arg's values
         const int* d_values = cat.values();
         thrust::for_each_n( thrust::device, thrust::make_counting_iterator<int>(0), (int)cat.size(),
-            [d_values, d_yvals, d_new_values] __device__ (int idx) {
-                int value = d_values[idx];
-                d_new_values[idx] = ( value < 0 ? value : d_yvals[value]);
-            });
+                            remap_values_fn{d_values, d_yvals, d_new_values} );
     }
     // the nulls are just appended together
     const BYTE* d_nulls = pImpl->get_nulls();
@@ -908,7 +882,7 @@ category<T>* category<T>::gather(const int* indexes, size_t count )
         BYTE* d_new_nulls = result->pImpl->get_nulls(count);
         size_t byte_count = (count+7)/8;
         thrust::for_each_n( thrust::device, thrust::make_counting_iterator<size_t>(0), byte_count,
-            [d_nulls, indexes, count, d_new_nulls] __device__ (size_t byte_idx) {
+            [indexes, count, d_new_nulls] __device__ (size_t byte_idx) {
                 BYTE mask = 0;
                 for( int bit=0; bit<8; ++bit )
                 {
@@ -928,7 +902,7 @@ category<T>* category<T>::gather_values(const int* indexes, size_t count )
     size_t vcount = pImpl->values_count();
     int check = thrust::count_if( thrust::device, indexes, indexes + count, [vcount] __device__ (int val) { return (val<0) || (val>=vcount);});
     if( check > 0 )
-        throw std::out_of_range("gather: invalid index value");
+        throw std::out_of_range("gather_values: invalid index value");
 
     category<T>* result = new category<T>;
     result->pImpl->init_keys( pImpl->get_keys(), pImpl->keys_count() );
@@ -961,13 +935,13 @@ category<T>* category<T>::gather_values(const int* indexes, size_t count )
 }
 
 // pre-define these types
-template class category<int>;
 template<> const char* category<int>::get_type_name() { return "int32"; };
-template class category<long>;
+template class category<int>;
 template<> const char* category<long>::get_type_name() { return "int64"; };
-template class category<float>;
+template class category<long>;
 template<> const char* category<float>::get_type_name() { return "float32"; };
-template class category<double>;
+template class category<float>;
 template<> const char* category<double>::get_type_name() { return "float64"; };
+template class category<double>;
 
 }

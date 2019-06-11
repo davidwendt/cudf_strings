@@ -136,7 +136,7 @@ category<T>::~category()
 }
 
 template<typename T>
-category<T>::category( const T* items, size_t count, BYTE* nulls, bool devmem )
+category<T>::category( const T* items, size_t count, const BYTE* nulls )
             : pImpl(nullptr)
 {
     pImpl = new category_impl<T>;

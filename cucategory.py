@@ -1,6 +1,6 @@
 import pynicucategory
 
-def from_ndarray(arr,nulls):
+def from_ndarray(arr, nulls=None):
     rtn = pynicucategory.n_createCategoryFromBuffer(arr,nulls)
     if rtn is not None:
         rtn = cucategory(rtn)
@@ -24,8 +24,8 @@ class cucategory:
         return str(self.keys())
 
     def __repr__(self):
-        return "<cucategory keys={},values={}".format(
-            self.keys_size(), self.size())
+        return "<cucategory[{}] keys={},values={}>".format(
+            self.keys_type(), self.keys_size(), self.size())
 
     def get_cpointer(self):
         return self.m_cptr
@@ -41,6 +41,9 @@ class cucategory:
 
     def keys_cpointer(self):
         return pynicucategory.n_keys_cpointer(self.m_cptr)
+
+    def keys_type(self):
+        return pynicucategory.n_keys_type(self.m_cptr)
 
     def values(self, narr):
         pynicucategory.n_get_values(self.m_cptr,narr)
@@ -79,18 +82,18 @@ class cucategory:
         return rtn
 
     def merge(self, cat):
-        rtn = pynicucategory.n_merge_category(self.m_cptr, cat)
+        rtn = pynicucategory.n_merge_category(self.m_cptr, cat.m_cptr)
         if rtn is not None:
             rtn = cucategory(rtn)
         return rtn
 
-    def add_keys(self, narr, nulls):
+    def add_keys(self, narr, nulls=None):
         rtn = pynicucategory.n_add_keys(self.m_cptr, narr, nulls)
         if rtn is not None:
             rtn = cucategory(rtn)
         return rtn
 
-    def remove_keys(self, narr, nulls):
+    def remove_keys(self, narr, nulls=None):
         rtn = pynicucategory.n_remove_keys(self.m_cptr, narr, nulls)
         if rtn is not None:
             rtn = cucategory(rtn)
@@ -102,7 +105,7 @@ class cucategory:
             rtn = cucategory(rtn)
         return rtn
 
-    def set_keys(self, narr, nulls):
+    def set_keys(self, narr, nulls=None):
         rtn = pynicucategory.n_set_keys(self.m_cptr, narr, nulls)
         if rtn is not None:
             rtn = cucategory(rtn)

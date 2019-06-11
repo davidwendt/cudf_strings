@@ -2,20 +2,19 @@
 
 typedef unsigned char BYTE;
 
-namespace custr
-{
-
-class base_type
+class base_category_type
 {
 public:
-    virtual ~base_type() {}
     virtual const char* get_type_name()=0;
 };
+
+namespace custr
+{
 
 template<typename T> class category_impl;
 
 template<typename T>
-class category : base_type
+class category : base_category_type
 {
     category_impl<T>* pImpl;
 
@@ -24,7 +23,7 @@ class category : base_type
 
 public:
 
-    category( const T* items, size_t count, BYTE* nulls=nullptr, bool devmem=true );
+    category( const T* items, size_t count, const BYTE* nulls=nullptr );
     ~category();
 
     category<T>* copy();
