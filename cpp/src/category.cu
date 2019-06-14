@@ -331,8 +331,17 @@ size_t category<T>::get_indexes_for(T key, int* d_results)
     int index = get_index_for(key);
     const int* d_values = pImpl->get_values();
     size_t count = size();
-    int* nend = thrust::copy_if( thrust::device, thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), d_results,
-        [index, d_values] __device__ (int idx) { return d_values[idx]==index; });
+    auto fn_values_equal = [index, d_values] __device__ (int idx) { return d_values[idx]==index; };
+    if( d_results == nullptr )
+        return thrust::count_if( thrust::device, 
+                                 thrust::make_counting_iterator<int>(0), 
+                                 thrust::make_counting_iterator<int>(count), 
+                                 fn_values_equal );
+    int* nend = thrust::copy_if( thrust::device, 
+                                 thrust::make_counting_iterator<int>(0),
+                                 thrust::make_counting_iterator<int>(count),
+                                 d_results, fn_values_equal );
+//        [index, d_values] __device__ (int idx) { return d_values[idx]==index; });
     return (size_t)(nend - d_results);
 }
 
@@ -344,6 +353,8 @@ size_t category<T>::get_indexes_for_null_key(int* d_results)
     int index = 0; // null key is always index 0
     const int* d_values = pImpl->get_values();
     size_t count = thrust::count( thrust::device, d_values, d_values + size(), index );
+    if( d_results == nullptr )
+        return count;
     thrust::copy_if( thrust::device, thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(count), d_results,
         [index, d_values] __device__ (int idx) { return d_values[idx]==index; });
     return count;
@@ -943,5 +954,7 @@ template<> const char* category<float>::get_type_name() { return "float32"; };
 template class category<float>;
 template<> const char* category<double>::get_type_name() { return "float64"; };
 template class category<double>;
+template<> const char* category<char>::get_type_name() { return "int8"; };
+template class category<char>;
 
 }

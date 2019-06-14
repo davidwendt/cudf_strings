@@ -1,7 +1,7 @@
 import pynicucategory
 
 def from_ndarray(arr, nulls=None):
-    rtn = pynicucategory.n_createCategoryFromBuffer(arr,nulls)
+    rtn = pynicucategory.n_createCategoryFromBuffer(arr, nulls)
     if rtn is not None:
         rtn = cucategory(rtn)
     return rtn
@@ -52,16 +52,13 @@ class cucategory:
         return pynicucategory.n_values_cpointer(self.m_cptr)
 
     def indexes_for_key(self, key, narr):
-        if key is not None:
-            return pynicucategory.n_get_indexes_for_key(self.m_cptr, key, narr)
-        else:
-            return pynicucategory.n_get_indexes_for_null_key(self.m_cptr, narr)
+        return pynicucategory.n_get_indexes_for_key(self.m_cptr, key, narr)
 
-    def to_type(self, narr):
-        pynicucategory.n_to_type(self.m_cptr, narr)
+    def to_type(self, narr, nulls=None):
+        pynicucategory.n_to_type(self.m_cptr, narr, nulls)
 
-    def gather_type(self, narr):
-        pynicucategory.n_gather_type(self.m_cptr, narr)
+    def gather_type(self, narr, nulls=None):
+        pynicucategory.n_gather_type(self.m_cptr, narr, nulls)
 
     def gather_and_remap(self, indexes):
         rtn = pynicucategory.n_gather_and_remap(self.m_cptr, indexes)

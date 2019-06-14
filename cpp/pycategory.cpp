@@ -89,7 +89,7 @@ public:
     unsigned int get_count()      { return count; }
     unsigned int get_type_width() { return type_width; }
     const char* get_dtype_name()  { return dtype_name.c_str(); }
-    bool is_device_type()  { return dtype_name.compare("DeviceNDArray")==0; }
+    bool is_device_type()         { return dev_data && !host_data; }
 
     void* get_values()
     {
@@ -106,7 +106,7 @@ public:
     }
 };
 
-// from custr's cpp/src/utilities/type_dispatcher.hpp
+// from cudf's cpp/src/utilities/type_dispatcher.hpp
 template<class functor_t, typename... Ts>
 constexpr decltype(auto) type_dispatcher( const char* stype, functor_t fn, Ts&&... args )
 {
@@ -119,9 +119,21 @@ constexpr decltype(auto) type_dispatcher( const char* stype, functor_t fn, Ts&&.
         return fn.template operator()<float>(std::forward<Ts>(args)...);
     if( dtype.compare("float64")==0 )
         return fn.template operator()<double>(std::forward<Ts>(args)...);
+    if( dtype.compare("int8")==0 )
+        return fn.template operator()<char>(std::forward<Ts>(args)...);
+    if( dtype.compare(0,10,"datetime64")==0 )
+        return fn.template operator()<long>(std::forward<Ts>(args)...);
     //
     throw std::runtime_error("invalid dtype in category<> dispatcher");
 }
+
+template<typename T>
+T pyobj_convert(PyObject* pyobj) { return 0; }
+template<> int pyobj_convert<int>(PyObject* pyobj) { return (int)PyLong_AsLong(pyobj); };
+template<> long pyobj_convert<long>(PyObject* pyobj) { return (long)PyLong_AsLong(pyobj); };
+template<> float pyobj_convert<float>(PyObject* pyobj) { return (float)PyFloat_AsDouble(pyobj); };
+template<> double pyobj_convert<double>(PyObject* pyobj) { return (double)PyFloat_AsDouble(pyobj); };
+template<> char pyobj_convert<char>(PyObject* pyobj) { return (char)PyLong_AsLong(pyobj); };
 
 }
 
@@ -327,7 +339,30 @@ static PyObject* n_values_cpointer( PyObject* self, PyObject* args )
     return PyLong_FromVoidPtr((void*)result);
 }
 
-// this one cannot use the same functor pattern since the passed in key must be converted from python
+namespace {
+struct get_indexes_for_functor : base_functor
+{
+    get_indexes_for_functor(base_category_type* obj_ptr) : base_functor(obj_ptr) {}
+    template<typename T>
+    size_t operator()(PyObject* pykey, int* result)
+    {
+        size_t count;
+        custr::category<T>* this_ptr = reinterpret_cast<custr::category<T>*>(obj_ptr);
+        if( pykey == Py_None )
+        {
+            Py_BEGIN_ALLOW_THREADS
+            count = this_ptr->get_indexes_for_null_key(result);
+            Py_END_ALLOW_THREADS
+        }
+        else
+        {
+            T key = pyobj_convert<T>(pykey);
+            count = this_ptr->get_indexes_for(key,result);
+        }
+        return count;
+    }
+};
+}
 static PyObject* n_get_indexes_for_key( PyObject* self, PyObject* args )
 {
     base_category_type* tptr = reinterpret_cast<base_category_type*>(PyLong_AsVoidPtr(PyTuple_GetItem(args,0)));
@@ -348,85 +383,12 @@ static PyObject* n_get_indexes_for_key( PyObject* self, PyObject* args )
     // this is only wasteful if we are passed host memory
     int* results = reinterpret_cast<int*>(data.get_values());
     size_t count = 0;
-    if( dtype.compare("int32")==0 )
-    {
-        int key = (int)PyLong_AsLong(pykey);
-        Py_BEGIN_ALLOW_THREADS
-        custr::category<int>* obj = reinterpret_cast<custr::category<int>*>(tptr);
-        count = obj->get_indexes_for(key,results);
-        Py_END_ALLOW_THREADS
-    }
-    else if( dtype.compare("int64")==0 )
-    {
-        long key = (long)PyLong_AsLong(pykey);
-        Py_BEGIN_ALLOW_THREADS
-        custr::category<long>* obj = reinterpret_cast<custr::category<long>*>(tptr);
-        count = obj->get_indexes_for(key,results);
-        Py_END_ALLOW_THREADS
-    }
-    else if( dtype.compare("float32")==0 )
-    {
-        float key =  (float)PyFloat_AsDouble(pykey);
-        Py_BEGIN_ALLOW_THREADS
-        custr::category<float>* obj = reinterpret_cast<custr::category<float>*>(tptr);
-        count = obj->get_indexes_for(key,results);
-        Py_END_ALLOW_THREADS
-    }
-    else if( dtype.compare("float64")==0 )
-    {
-        double key = (double)PyFloat_AsDouble(pykey);
-        Py_BEGIN_ALLOW_THREADS
-        custr::category<double>* obj = reinterpret_cast<custr::category<double>*>(tptr);
-        count = obj->get_indexes_for(key,results);
-        Py_END_ALLOW_THREADS
-    }
-    else
-    {
-        throw std::runtime_error("invalid dtype in category<> get_indexes");
-    }
-
-    // copy results back to host if requested
+    Py_BEGIN_ALLOW_THREADS
+    count = type_dispatcher( tptr->get_type_name(), get_indexes_for_functor(tptr), pykey, results );
     if( !data.is_device_type() )
         data.results_to_host();
-        //cudaMemcpy( data.get_host_ptr(), results, count * data.get_type_width(), cudaMemcpyDeviceToHost);
-
-    //
-    return PyLong_FromLong(count);
-}
-
-namespace {
-struct get_indexes_for_null_functor : base_functor
-{
-    get_indexes_for_null_functor(base_category_type* obj_ptr) : base_functor(obj_ptr) {}
-    template<typename T>
-    size_t operator()(int* result)
-    {
-        custr::category<T>* this_ptr = reinterpret_cast<custr::category<T>*>(obj_ptr);
-        return this_ptr->get_indexes_for_null_key(result);
-    }
-};
-}
-static PyObject* n_get_indexes_for_null_key( PyObject* self, PyObject* args )
-{
-    base_category_type* tptr = reinterpret_cast<base_category_type*>(PyLong_AsVoidPtr(PyTuple_GetItem(args,0)));
-    DataHandler data(PyTuple_GetItem(args,1),"int32");
-    if( data.is_error() )
-    {
-        PyErr_Format(PyExc_ValueError,"get_indexes_for_null: %s", data.get_error_text());
-        Py_RETURN_NONE;
-    }
-    size_t count = type_dispatcher( tptr->get_type_name(), size_functor(tptr) );
-    if( count > data.get_count() )
-    {
-        PyErr_Format(PyExc_ValueError,"buffer must be able to hold at least %ld int32 values", count);
-        Py_RETURN_NONE;
-    }
-    Py_BEGIN_ALLOW_THREADS
-    int* results = reinterpret_cast<int*>(data.get_values());
-    count = type_dispatcher( tptr->get_type_name(), get_indexes_for_null_functor(tptr), results );
-    if( !data.is_device_type() ) // copy results back to host only if requested
-        data.results_to_host();//cudaMemcpy( data.get_host_ptr(), results, count * data.get_type_width(), cudaMemcpyDeviceToHost);
     Py_END_ALLOW_THREADS
+    //
     return PyLong_FromLong(count);
 }
 
@@ -500,10 +462,9 @@ static PyObject* n_gather_type( PyObject* self, PyObject* args )
         PyErr_Format(PyExc_ValueError,"output %s", data.get_error_text());
         Py_RETURN_NONE;
     }
-    size_t count = type_dispatcher( tptr->get_type_name(), size_functor(tptr) );
-    if( count > data.get_count() )
+    if( indexes.get_count() > data.get_count() )
     {
-        PyErr_Format(PyExc_ValueError,"buffer must be able to hold at least %ld %s values", count, tptr->get_type_name() );
+        PyErr_Format(PyExc_ValueError,"buffer must be able to hold at least %ld %s values", indexes.get_count(), tptr->get_type_name() );
         Py_RETURN_NONE;
     }
     DataHandler nulls(pynulls);
@@ -782,7 +743,6 @@ static PyMethodDef s_Methods[] = {
     { "n_get_values", n_get_values, METH_VARARGS, "" },
     { "n_values_cpointer", n_values_cpointer, METH_VARARGS, "" },
     { "n_get_indexes_for_key", n_get_indexes_for_key, METH_VARARGS, "" },
-    { "n_get_indexes_for_null_key", n_get_indexes_for_null_key, METH_VARARGS, "" },
     { "n_to_type", n_to_type, METH_VARARGS, "" },
     { "n_gather_type", n_gather_type, METH_VARARGS, "" },
     { "n_merge_category", n_merge_category, METH_VARARGS, "" },
