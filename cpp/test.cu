@@ -8,9 +8,14 @@
 #include <thrust/device_vector.h>
 #include "include/category.h"
 
-// nvcc -w -std=c++11 --expt-extended-lambda test.cu src/category.cu -o test
+//
+// nvcc -w -std=c++11 --expt-extended-lambda -gencode arch=compute_70,code=sm_70 test.cu src/category.cu src/category_int.cu src/category_float.cu -o test
+//
 
-bool is_item_null( const BYTE* nulls, int idx );
+static bool is_item_null( const BYTE* nulls, int idx )
+{
+    return nulls && ((nulls[idx/8] & (1 << (idx % 8)))==0);
+}
 
 
 int g_ivals[] = { 4,1,2,3,2,1,4,1,1 };
