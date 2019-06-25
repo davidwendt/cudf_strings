@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC   -shared -Wl,-soname,libcucategory.so -o libcucategory.so CMakeFiles/cucategory.dir/src/cucategory_generated_category.cu.o CMakeFiles/cucategory.dir/src/cucategory_generated_category_int.cu.o CMakeFiles/cucategory.dir/src/cucategory_generated_category_float.cu.o -Wl,-rpath,"\$ORIGIN" /usr/local/cuda/lib64/libcudart_static.a -lpthread -ldl -lrt 
