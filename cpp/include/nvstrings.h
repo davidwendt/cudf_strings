@@ -13,7 +13,7 @@ namespace cudf {
 struct column;
 struct column_view;
 
-namespace custr {
+namespace string {
 
 enum sort_type {
         none=0,    ///< no sorting
