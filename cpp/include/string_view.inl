@@ -249,18 +249,17 @@ __device__ inline int string_view::compare(const char* data, unsigned int bytes)
     if(!ptr2)
         return 1;
     unsigned int len1 = size();
-    unsigned int len2 = bytes;
-    unsigned int idx;
-    for(idx = 0; (idx < len1) && (idx < len2); ++idx)
+    unsigned int idx = 0;
+    for(; (idx < len1) && (idx < bytes); ++idx)
     {
         if(*ptr1 != *ptr2)
             return (int)*ptr1 - (int)*ptr2;
-        ptr1++;
-        ptr2++;
+        ++ptr1;
+        ++ptr2;
     }
     if(idx < len1)
         return 1;
-    if(idx < len2)
+    if(idx < bytes)
         return -1;
     return 0;
 }
