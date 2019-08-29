@@ -33,7 +33,7 @@ void printValues( const int* values, int count )
 }
 
 template<typename T>
-void printKeys( cudf::category<T>& cat )
+void printKeys( custr::category<T>& cat )
 {
     const T* keys = cat.keys();
     int count = (int)cat.keys_size();
@@ -51,14 +51,14 @@ void test_int(std::mt19937& mt)
 
     printf("categorizing...\n");
     double st = GetTime();
-    cudf::category<int> cat( data.data(), data.size() );
+    custr::category<int> cat( data.data(), data.size() );
     double et = GetTime() - st;
     printf("%g seconds\n",et);
 }
 
 void test_string(std::mt19937& mt)
 {
-    std::uniform_real_distribution<double> dist(32.0,128.0);
+    std::uniform_int_distribution<int> dist(32,126);
     std::vector<std::string> data;
     for( int idx=0; idx < 1000000; ++idx )
     {
@@ -66,7 +66,7 @@ void test_string(std::mt19937& mt)
         for( int jdx=0; jdx < 20; ++jdx )
         {
             char ch = (char)dist(mt);
-            str.append(ch,1);
+            str.append(1,ch);
         }
         data.push_back(str);
     }
@@ -75,7 +75,7 @@ void test_string(std::mt19937& mt)
     {
         printf("categorizing...\n");
         double st = GetTime();
-        cudf::category<std::string> cat( data.data(), data.size() );
+        custr::category<std::string> cat( data.data(), data.size() );
         double et = GetTime() - st;
         printf("%g seconds\n",et);
     }

@@ -58,18 +58,18 @@ endif()
 
 # Set these up as variables to make reading the generated file easier
 set(CMAKE_COMMAND "/home/dwendt/anaconda3/envs/dev37/bin/cmake") # path
-set(source_file "/home/dwendt/proj/cudf_strings/cpp/src/category.cu") # path
-set(NVCC_generated_dependency_file "/home/dwendt/proj/cudf_strings/cpp/build/CMakeFiles/cucategory.dir/src/cucategory_generated_category.cu.o.NVCC-depend") # path
-set(cmake_dependency_file "/home/dwendt/proj/cudf_strings/cpp/build/CMakeFiles/cucategory.dir/src/cucategory_generated_category.cu.o.depend") # path
+set(source_file "/home/dwendt/proj/cudf_strings/category/cpp/src/category.cu") # path
+set(NVCC_generated_dependency_file "/home/dwendt/proj/cudf_strings/category/cpp/build/CMakeFiles/cucategory.dir/src/cucategory_generated_category.cu.o.NVCC-depend") # path
+set(cmake_dependency_file "/home/dwendt/proj/cudf_strings/category/cpp/build/CMakeFiles/cucategory.dir/src/cucategory_generated_category.cu.o.depend") # path
 set(CUDA_make2cmake "/home/dwendt/anaconda3/envs/dev37/share/cmake-3.12/Modules/FindCUDA/make2cmake.cmake") # path
 set(CUDA_parse_cubin "/home/dwendt/anaconda3/envs/dev37/share/cmake-3.12/Modules/FindCUDA/parse_cubin.cmake") # path
 set(build_cubin OFF) # bool
 set(CUDA_HOST_COMPILER "/usr/bin/cc") # path
 # We won't actually use these variables for now, but we need to set this, in
 # order to force this file to be run again if it changes.
-set(generated_file_path "/home/dwendt/proj/cudf_strings/cpp/build/CMakeFiles/cucategory.dir/src/.") # path
-set(generated_file_internal "/home/dwendt/proj/cudf_strings/cpp/build/CMakeFiles/cucategory.dir/src/./cucategory_generated_category.cu.o") # path
-set(generated_cubin_file_internal "/home/dwendt/proj/cudf_strings/cpp/build/CMakeFiles/cucategory.dir/src/./cucategory_generated_category.cu.o.cubin.txt") # path
+set(generated_file_path "/home/dwendt/proj/cudf_strings/category/cpp/build/CMakeFiles/cucategory.dir/src/.") # path
+set(generated_file_internal "/home/dwendt/proj/cudf_strings/category/cpp/build/CMakeFiles/cucategory.dir/src/./cucategory_generated_category.cu.o") # path
+set(generated_cubin_file_internal "/home/dwendt/proj/cudf_strings/category/cpp/build/CMakeFiles/cucategory.dir/src/./cucategory_generated_category.cu.o.cubin.txt") # path
 
 set(CUDA_NVCC_EXECUTABLE "/usr/local/cuda/bin/nvcc") # path
 set(CUDA_NVCC_FLAGS -std=c++14;--expt-extended-lambda;-gencode;arch=compute_70,code=sm_70;-Xcompiler;-fPIC ;; ) # list
@@ -79,7 +79,7 @@ set(CUDA_NVCC_FLAGS_MINSIZEREL  ; )
 set(CUDA_NVCC_FLAGS_RELEASE  ; )
 set(CUDA_NVCC_FLAGS_RELWITHDEBINFO  ; )
 set(nvcc_flags -m64;-Dcucategory_EXPORTS) # list
-set(CUDA_NVCC_INCLUDE_DIRS "/usr/local/cuda/include;/home/dwendt/anaconda3/envs/dev37/include/python3.7m;/home/dwendt/proj/cudf_strings/cpp/.;/usr/local/cuda/include") # list (needs to be in quotes to handle spaces properly).
+set(CUDA_NVCC_INCLUDE_DIRS "/usr/local/cuda/include;/home/dwendt/anaconda3/envs/dev37/include/python3.7m;/home/dwendt/proj/cudf_strings/category/cpp/.;/usr/local/cuda/include") # list (needs to be in quotes to handle spaces properly).
 set(CUDA_NVCC_COMPILE_DEFINITIONS [==[]==]) # list (needs to be in lua quotes see #16510 ).
 set(format_flag "-c") # string
 set(cuda_language_flag ) # list
