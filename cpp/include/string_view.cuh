@@ -68,7 +68,7 @@ class string_view
   /**---------------------------------------------------------------------------*
    * @brief Return the number of characters (UTF-8) in this string
    *---------------------------------------------------------------------------**/
-  __device__ size_type chars_count() const;
+  __device__ size_type characters() const;
   /**---------------------------------------------------------------------------*
    * @brief Return a pointer to the internal device array
    *---------------------------------------------------------------------------**/
@@ -86,8 +86,9 @@ class string_view
   class iterator
   {
     public:
-      __device__ iterator(const string_view& str, size_type initPos);
-      __device__ iterator(const iterator& mit);
+      __device__ iterator(const string_view& str, size_type pos);
+      __device__ iterator(const iterator& mit) = default;
+      __device__ iterator(iterator&& mit) = default;
       __device__ iterator& operator++();
       __device__ iterator operator++(int);
       __device__ bool operator==(const iterator& rhs) const;
@@ -96,8 +97,8 @@ class string_view
       __device__ size_type position() const;
       __device__ size_type byte_offset() const;
     private:
-      const char* p;
-      size_type cpos, offset;
+      const char* p{};
+      size_type cpos{}, offset{};
   };
 
   /**---------------------------------------------------------------------------*
@@ -137,23 +138,49 @@ class string_view
    *            match but the arg string is longer.
    *---------------------------------------------------------------------------**/
   __device__ int compare(const string_view& str) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Comparing target string with this string. Each character is compared
+   * as a UTF-8 code-point value.
+   * 
+   * @param str Target string to compare with this string.
+   * @param bytes Number of bytes in str.
+   * @return 0  If they compare equal.
+   *         <0 Either the value of the first character of this string that does
+   *            not match is lower in the arg string, or all compared characters
+   *            match but the arg string is shorter.
+   *         >0 Either the value of the first character of this string that does
+   *            not match is greater in the arg string, or all compared characters
+   *            match but the arg string is longer.
+   *---------------------------------------------------------------------------**/
   __device__ int compare(const char* data, size_type bytes) const;
 
   /**---------------------------------------------------------------------------*
-   * @brief Operators perform comparison and return appropriate bool value.
-   * 
-   * @param rhs Target string to compare with this string.
-   * @return True if condition is met.
+   * @brief Returns true if arg string matches this string exactly.
    *---------------------------------------------------------------------------**/
   __device__ bool operator==(const string_view& rhs) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Returns true if arg string does not match this string.
+   *---------------------------------------------------------------------------**/
   __device__ bool operator!=(const string_view& rhs) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Returns true if arg string sorts ascending to this string.
+   *---------------------------------------------------------------------------**/
   __device__ bool operator<(const string_view& rhs) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Returns true if arg string sorts descending to this string.
+   *---------------------------------------------------------------------------**/
   __device__ bool operator>(const string_view& rhs) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Returns true if arg string sorts ascending or matches this string.
+   *---------------------------------------------------------------------------**/
   __device__ bool operator<=(const string_view& rhs) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Returns true if arg string sorts descending or matches this string.
+   *---------------------------------------------------------------------------**/
   __device__ bool operator>=(const string_view& rhs) const;
 
   /**---------------------------------------------------------------------------*
-   * @brief Returns character position if arg string is contained in this string.
+   * @brief Returns first character position if arg string is contained in this string.
    * 
    * @param str Target string to compare with this string.
    * @param pos Character position to start search within this string.
@@ -161,9 +188,28 @@ class string_view
    *              Specify -1 to indicate to the end of the string.
    * @return -1 if arg string is not found in this string.
    *---------------------------------------------------------------------------**/
-  __device__ int find( const string_view& str, size_type pos=0, size_type count=-1 ) const;
-  __device__ int find( const char* str, size_type bytes, size_type pos=0, size_type count=-1 ) const;
-  __device__ int find( Char chr, size_type pos=0, size_type count=-1 ) const;
+  __device__ size_type find( const string_view& str, size_type pos=0, size_type count=-1 ) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Returns first character position if arg array is contained in this string.
+   * 
+   * @param str Target string to compare with this string.
+   * @param bytes Number of bytes in str.
+   * @param pos Character position to start search within this string.
+   * @param count Number of characters from pos to include in the search.
+   *              Specify -1 to indicate to the end of the string.
+   * @return -1 if arg string is not found in this string.
+   *---------------------------------------------------------------------------**/
+  __device__ size_type find( const char* str, size_type bytes, size_type pos=0, size_type count=-1 ) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Returns first character position if arg character is contained in this string.
+   * 
+   * @param chr Single encoded character.
+   * @param pos Character position to start search within this string.
+   * @param count Number of characters from pos to include in the search.
+   *              Specify -1 to indicate to the end of the string.
+   * @return -1 if arg string is not found in this string.
+   *---------------------------------------------------------------------------**/
+  __device__ size_type find( Char chr, size_type pos=0, size_type count=-1 ) const;
   /**---------------------------------------------------------------------------*
    * @brief Same as find() but searches from the end of this string.
    * 
@@ -173,9 +219,28 @@ class string_view
    *              Specify -1 to indicate to the end of the string.
    * @return -1 if arg string is not found in this string.
    *---------------------------------------------------------------------------**/
-  __device__ int rfind( const string_view& str, size_type pos=0, size_type count=-1 ) const;
-  __device__ int rfind( const char* str, size_type bytes, size_type pos=0, size_type count=-1 ) const;
-  __device__ int rfind( Char chr, size_type pos=0, size_type count=-1 ) const;
+  __device__ size_type rfind( const string_view& str, size_type pos=0, size_type count=-1 ) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Same as find() but searches from the end of this string.
+   * 
+   * @param str Target string to compare with this string.
+   * @param bytes Number of bytes in str.
+   * @param pos Character position to start search within this string.
+   * @param count Number of characters from pos to include in the search.
+   *              Specify -1 to indicate to the end of the string.
+   * @return -1 if arg string is not found in this string.
+   *---------------------------------------------------------------------------**/
+  __device__ size_type rfind( const char* str, size_type bytes, size_type pos=0, size_type count=-1 ) const;
+  /**---------------------------------------------------------------------------*
+   * @brief Same as find() but searches from the end of this string.
+   * 
+   * @param chr Single encoded character.
+   * @param pos Character position to start search within this string.
+   * @param count Number of characters from pos to include in the search.
+   *              Specify -1 to indicate to the end of the string.
+   * @return -1 if arg string is not found in this string.
+   *---------------------------------------------------------------------------**/
+  __device__ size_type rfind( Char chr, size_type pos=0, size_type count=-1 ) const;
 
   /**---------------------------------------------------------------------------*
    * @brief Return a sub-string of this string. The original string and device
