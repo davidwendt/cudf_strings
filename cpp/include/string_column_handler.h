@@ -1,9 +1,6 @@
 #pragma once
 
-#include <cstdint>
-#include <cstddef>
-#include <memory>
-#include <vector>
+#include <cudf/types.hpp>
 
 // declaration of strings methods using new column interface
 
@@ -22,7 +19,7 @@ enum sort_type {
     };
 
 // create strings column from char-ptr/size pairs pointing to device memory
-std::unique_ptr<cudf::column> create_column( const std::pair<const char*,size_t>* strs );
+std::unique_ptr<cudf::column> create_column( const std::pair<const char*,size_t>* strs, size_type count );
 
 // extract pairs from strings column
 void create_index( const cudf::column_view strings_column, std::pair<const char*,size_t>* strs );
@@ -30,19 +27,19 @@ void create_index( const cudf::column_view strings_column, std::pair<const char*
 // copy column strings to host pointers
 void to_host( const cudf::column_view strings_column, char** list );
 // print strings to stdout
-void print( const cudf::column_view strings_column, uint32_t start=0, int32_t end=-1,
-            int32_t max_width=-1, const char* delimiter = "\n" );
+void print( const cudf::column_view strings_column, size_type start=0, size_type end=-1,
+            size_type max_width=-1, const char* delimiter = "\n" );
 
 // make a copy of a strings column
 std::unique_ptr<cudf::column> copy( const cudf::column_view strings_column );
 
 // new strings column from subset of given strings column
 std::unique_ptr<cudf::column> sublist( const cudf::column_view strings_column,
-                                       uint32_t start, uint32_t end, uint32_t step );
+                                       size_type start, size_type end, size_type step );
 
 // new strings column by gathering strings from existing column
 std::unique_ptr<cudf::column> gather( const cudf::column_view strings_column,
-                                      const int32_t* indexes, uint32_t count );
+                                      const size_type* indexes, size_type count );
 
 // return sorted version of the given strings column
 std::unique_ptr<cudf::column> sort( const cudf::column_view strings_column,
@@ -65,20 +62,20 @@ std::unique_ptr<cudf::column> is_digit( const cudf::column_view strings_column )
 std::unique_ptr<cudf::column> is_empty( const cudf::column_view strings_column );
 
 // columns with equal numbers of strings are concatenated to form a new column
-std::unique_ptr<cudf::column> concatentate( const cudf::column_view strings_column,
+std::unique_ptr<cudf::column> concatenate( const cudf::column_view strings_column,
                                             const cudf::column_view strings_others,
                                             const char* separator, const char* narep=nullptr);
-std::unique_ptr<cudf::column> concatentate( const cudf::column_view strings_column,
+std::unique_ptr<cudf::column> concatenate( const cudf::column_view strings_column,
                                             std::vector<cudf::column_view>& strings_others,
                                             const char* separator, const char* narep=nullptr);
 
 // strings column is split vertically into new columns
 void split( const cudf::column_view strings_column,
-            const char* delimiter, int32_t maxsplit,
+            const char* delimiter, size_type maxsplit,
             std::vector<cudf::column>& results);
 
-// concatentate strings column with itself -- returns new column
-std::unique_ptr<cudf::column> repeat( const cudf::column_view strings_column, uint32_t count );
+// concatenate strings column with itself -- returns new column
+std::unique_ptr<cudf::column> repeat( const cudf::column_view strings_column, size_type count );
 
 enum pad_side {
         left,   ///< Add padding to the left.
@@ -87,11 +84,11 @@ enum pad_side {
     };
 // pad each string to specified width -- returns new column
 std::unique_ptr<cudf::column> pad( const cudf::column_view strings_column,
-                                   uint32_t width, pad_side side,  const char* fillchar=nullptr );
+                                   size_type width, pad_side side,  const char* fillchar=nullptr );
 
 // return new instance with substring of the provided strings column
 std::unique_ptr<cudf::column> slice( const cudf::column_view strings_column,
-                                     int32_t start=0, int32_t stop=-1, int32_t step=1 );
+                                     size_type start=0, size_type stop=-1, size_type step=1 );
 
 // extracts substrings using regex pattern -- results is one or more new strings columns
 void extract( const cudf::column_view strings_column, const char* pattern,
@@ -99,7 +96,7 @@ void extract( const cudf::column_view strings_column, const char* pattern,
 
 // replace each occurrence of the specified str with the target repl -- returns new column
 std::unique_ptr<cudf::column> replace( const cudf::column_view strings_column,
-                                       const char* str, const char* repl, int32_t maxrepl=-1 );
+                                       const char* str, const char* repl, size_type maxrepl=-1 );
 
 // replace null-string entries with the specified string(s) -- returns new column
 std::unique_ptr<cudf::column> fillna( const cudf::column_view strings_column, const char* str );
@@ -107,7 +104,7 @@ std::unique_ptr<cudf::column> fillna( const cudf::column_view strings_column, co
 
 // insert string into each string at the specified position -- returns new column
 std::unique_ptr<cudf::column> insert( const cudf::column_view strings_column,
-                                      const char* repl, int32_t position );
+                                      const char* repl, size_type position );
 
 // remove specified character(s) from beginning and end of each string -- returns new column
 std::unique_ptr<cudf::column> strip( const cudf::column_view strings_column, const char* to_strip );
@@ -119,7 +116,7 @@ std::unique_ptr<cudf::column> capitalize( const cudf::column_view strings_column
 
 // search for the specified string in each string -- returns int32 column
 std::unique_ptr<cudf::column> find( const cudf::column_view strings_column,
-                                    const char* str, int32_t start, int32_t end );
+                                    const char* str, size_type start, size_type end );
 
 // search for the pattern in each string -- returns new columns
 void find_all( const cudf::column_view strings_column,
