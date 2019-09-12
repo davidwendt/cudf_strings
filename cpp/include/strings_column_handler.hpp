@@ -52,6 +52,9 @@ class strings_column_handler
   // new strings column from subset of given strings column
   std::unique_ptr<cudf::column> sublist( size_type start, size_type end, size_type step );
 
+  // new strings column using the indices to re-order, repeat, etc elements from this column
+  std::unique_ptr<cudf::column> gather( const column_view& indices );
+
   // return sorted version of the given strings column
   std::unique_ptr<cudf::column> sort( sort_type stype, bool ascending=true, bool nullfirst=true );
 

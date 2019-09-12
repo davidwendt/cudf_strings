@@ -18,7 +18,6 @@
 #include <cudf/strings/strings_column_factories.hpp>
 #include <cudf/null_mask.hpp>
 #include <cudf/column/column.hpp>
-#include <cudf/utils/traits.hpp>
 #include <utilities/error_utils.hpp>
 
 #include <rmm/thrust_rmm_allocator.h>
@@ -45,7 +44,7 @@ std::unique_ptr<column> make_strings_column(
   auto d_strs = strs.get();
 
   // build offsets column
-  auto offsets_column = make_numeric_column( data_type{INT32}, count, mask_state::ALL_VALID, stream, mr );
+  auto offsets_column = make_numeric_column( data_type{INT32}, count, mask_state::UNALLOCATED, stream, mr );
   auto offsets_view = offsets_column->mutable_view();
   thrust::transform_inclusive_scan( execpol->on(stream),
       thrust::make_counting_iterator<size_type>(0), thrust::make_counting_iterator<size_type>(count),
@@ -69,7 +68,7 @@ std::unique_ptr<column> make_strings_column(
   // build null_mask
   mask_state state = mask_state::UNINITIALIZED;
   if( null_count==0 )
-    state = mask_state::ALL_VALID;
+    state = mask_state::UNALLOCATED;
   else if( null_count==count )
     state = mask_state::ALL_NULL;
   auto null_mask = create_null_mask(count, state, stream, mr);
@@ -77,7 +76,7 @@ std::unique_ptr<column> make_strings_column(
   {
     uint8_t* d_null_mask = static_cast<uint8_t*>(null_mask.data());
     CUDA_TRY(cudaMemsetAsync(d_null_mask, 0, null_mask.size(), stream));
-    thrust::for_each_n(execpol->on(0), thrust::make_counting_iterator<size_type>(0), count,
+    thrust::for_each_n(execpol->on(0), thrust::make_counting_iterator<size_type>(0), (count/8),
         [d_strs, count, d_null_mask] __device__(size_type byte_idx) {
             unsigned char byte = 0; // set one byte per thread -- init to all nulls
             for( size_type i=0; i < 8; ++i )
@@ -95,7 +94,7 @@ std::unique_ptr<column> make_strings_column(
   }
 
   // build chars column
-  auto chars_column = make_numeric_column( data_type{INT8}, bytes, mask_state::ALL_VALID, stream, mr );
+  auto chars_column = make_numeric_column( data_type{INT8}, bytes, mask_state::UNALLOCATED, stream, mr );
   auto chars_view = chars_column->mutable_view();
   auto d_chars = chars_view.data<int8_t>(); 
   auto d_offsets = offsets_view.data<int32_t>();

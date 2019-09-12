@@ -17,11 +17,14 @@
 #include <cudf/strings/strings_column_handler.hpp>
 #include <cudf/strings/strings_column_factories.hpp>
 #include <cudf/strings/string_view.cuh>
+#include <cudf/column/column_factories.hpp>
 #include <cudf/column/column_device_view.cuh>
 #include <utilities/error_utils.hpp>
 
 #include <rmm/thrust_rmm_allocator.h>
 #include <thrust/for_each.h>
+#include <thrust/sort.h>
+#include <thrust/sequence.h>
 
 namespace cudf {
 
@@ -81,7 +84,8 @@ void strings_column_handler::print( size_type start, size_type end,
 
     // stick with the default stream for this odd/rare stdout function
     auto execpol = rmm::exec_policy(0);
-    auto strings_column = column_device_view(_parent);
+    auto strings_column = column_device_view::create(_parent);
+    auto d_column = *strings_column;
     auto d_offsets = offsets_data();
     auto d_strings = chars_data();
 
@@ -90,8 +94,8 @@ void strings_column_handler::print( size_type start, size_type end,
     thrust::transform( execpol->on(0),
         thrust::make_counting_iterator<size_type>(start), thrust::make_counting_iterator<size_type>(end),
         output_offsets.begin(),
-        [strings_column, d_strings, max_width, d_offsets] __device__ (size_type idx) {
-            if( strings_column.nullable() && strings_column.is_null(idx) )
+        [d_column, d_strings, max_width, d_offsets] __device__ (size_type idx) {
+            if( d_column.nullable() && d_column.is_null(idx) )
                 return 0;
             size_type offset = idx ? d_offsets[idx-1] : 0; // this logic will be a template
             size_type bytes = d_offsets[idx] - offset;     // specialization on element()
@@ -153,10 +157,123 @@ std::unique_ptr<cudf::column> strings_column_handler::sublist( size_type start, 
     return make_strings_column(nullptr, 0);
 }
 
+std::unique_ptr<cudf::column> strings_column_handler::gather( const column_view& indices )
+{
+    //
+    size_type count = indices.size();
+    auto d_indices = indices.data<int32_t>();
+
+    auto execpol = rmm::exec_policy(0);
+    auto strings_column = column_device_view::create(_parent);
+    auto d_column = *strings_column;
+    auto d_offsets = offsets_data();
+
+    // build offsets column
+    auto offsets_column = make_numeric_column( data_type{INT32}, count, mask_state::UNALLOCATED );
+    auto offsets_view = offsets_column->mutable_view();
+    auto d_new_offsets = offsets_view.data<int32_t>();
+    // get lengths
+    thrust::transform( execpol->on(0),
+        thrust::make_counting_iterator<size_type>(0), thrust::make_counting_iterator<size_type>(count),
+        d_new_offsets,
+        [d_column, d_offsets, d_indices] __device__ (size_type idx) {
+            size_type index = d_indices[idx];
+            if( d_column.nullable() && d_column.is_null(index) )
+                return 0;
+            size_type offset = idx ? d_offsets[index-1] : 0;
+            return d_offsets[index] - offset;
+        });
+    // convert to offsets
+    thrust::inclusive_scan( execpol->on(0), d_new_offsets, d_new_offsets+count, d_new_offsets );
+    // build null mask
+    size_type null_count = this->null_count();
+    mask_state state = mask_state::UNINITIALIZED;
+    if( null_count==0 )
+      state = mask_state::UNALLOCATED;
+    else if( null_count==count )
+      state = mask_state::ALL_NULL;
+    auto null_mask = create_null_mask(count, state);
+    if( (null_count > 0) && (null_count < count) )
+    {
+      uint8_t* d_null_mask = static_cast<uint8_t*>(null_mask.data());
+      CUDA_TRY(cudaMemsetAsync(d_null_mask, 0, null_mask.size()));
+      thrust::transform(execpol->on(0),
+        thrust::make_counting_iterator<size_type>(0), thrust::make_counting_iterator<size_type>(count/8),
+        d_null_mask,
+        [d_column, count] __device__(size_type byte_idx) {
+            unsigned char byte = 0; // set one byte per thread -- init to all nulls
+            for( size_type i=0; i < 8; ++i )
+            {
+              size_type idx = i + (byte_idx*8);  // compute d_strs index
+              byte = byte >> 1;                  // shift until we are done
+              if( idx < count )                  // check boundary
+              {
+                if( d_column.is_null(idx) )
+                  byte |= 128;               // string is not null, set high bit
+              }
+            }
+            return byte; //d_null_mask[byte_idx] = byte;
+        });
+    }
+
+    // build chars column
+    auto chars_column = make_numeric_column( data_type{INT8}, chars_column_size(), mask_state::UNALLOCATED );
+    auto chars_view = chars_column->mutable_view();
+    auto d_chars = chars_view.data<int8_t>(); 
+    thrust::for_each_n(execpol->on(0), thrust::make_counting_iterator<size_type>(0), count,
+        [d_column, d_indices, d_new_offsets, d_chars] __device__(size_type idx){
+            // place individual strings
+            if( d_column.nullable() && d_column.is_null(idx) )
+                return;
+            string_view dstr = d_column.element<string_view>(d_indices[idx]);
+            size_type offset = (idx ? d_new_offsets[idx-1] : 0);
+            memcpy(d_chars + offset, dstr.data(), dstr.size() );
+        });
+
+  // build children vector
+  std::vector<std::unique_ptr<column>> children;
+  children.emplace_back(std::move(offsets_column));
+  children.emplace_back(std::move(chars_column));
+
+  return std::make_unique<column>(
+      data_type{STRING}, 0, rmm::device_buffer{0},
+      null_mask, null_count,
+      std::move(children));   
+}
+
 // return sorted version of the given strings column
 std::unique_ptr<cudf::column> strings_column_handler::sort( sort_type stype, bool ascending, bool nullfirst )
 {
-    return make_strings_column(nullptr, 0);
+    //
+    auto execpol = rmm::exec_policy(0);
+    auto strings_column = column_device_view::create(_parent);
+    auto d_column = *strings_column;
+
+    // lets sort indices
+    size_type count = this->count();
+    thrust::device_vector<size_type> indices(count);
+    thrust::sequence( execpol->on(0), indices.begin(), indices.end() );
+    thrust::sort( execpol->on(0), indices.begin(), indices.end(),
+        [d_column, stype, ascending, nullfirst] __device__ (size_type lhs, size_type rhs) {
+            bool lhs_null{d_column.nullable() && d_column.is_null(lhs)};
+            bool rhs_null{d_column.nullable() && d_column.is_null(rhs)};
+            if( lhs_null || rhs_null )
+                return (nullfirst ? !rhs_null : !lhs_null);
+            string_view lhs_str = d_column.element<string_view>(lhs);
+            string_view rhs_str = d_column.element<string_view>(rhs);
+            int cmp = lhs_str.compare(rhs_str);
+            return (ascending ? (cmp<0) : (cmp>0));
+        });
+
+    // should have a way to create a column_view with an existing memory buffer
+    auto d_indices = indices.data().get();
+    // we will create an empty one and pass in this data for now
+    auto indices_column = make_numeric_column( data_type{INT32}, count, mask_state::UNALLOCATED );
+    auto indices_view = indices_column->mutable_view();
+    cudaMemcpyAsync( indices_view.data<int32_t>(), d_indices, count*sizeof(int32_t), cudaMemcpyDeviceToDevice);
+
+    // now build a new strings column from the indices
+    return gather( indices_view );
 }
 
 // return sorted indexes only -- returns integer column
