@@ -36,7 +36,7 @@ typedef unsigned int Char;
 class string_view
 {
  public:
-  __device__ string_view() = default;
+  string_view() = default;
   /**---------------------------------------------------------------------------*
    * @brief Create instance from existing device char array.
    *
@@ -51,11 +51,11 @@ class string_view
    * @param data Device char array encoded in UTF8.
    *---------------------------------------------------------------------------**/
   __device__ string_view(const char* data);
-  __device__ string_view(const string_view&) = default;
-  __device__ string_view(string_view&&) = default;
-  __device__ ~string_view() = default;
-  __device__ string_view& operator=(const string_view&) = default;
-  __device__ string_view& operator=(string_view&&) = default;
+  string_view(const string_view&) = default;
+  string_view(string_view&&) = default;
+  ~string_view() = default;
+  string_view& operator=(const string_view&) = default;
+  string_view& operator=(string_view&&) = default;
 
   /**---------------------------------------------------------------------------*
    * @brief Return the number of bytes in this string
@@ -87,8 +87,8 @@ class string_view
   {
     public:
       __device__ iterator(const string_view& str, size_type pos);
-      __device__ iterator(const iterator& mit) = default;
-      __device__ iterator(iterator&& mit) = default;
+      iterator(const iterator& mit) = default;
+      iterator(iterator&& mit) = default;
       __device__ iterator& operator++();
       __device__ iterator operator++(int);
       __device__ bool operator==(const iterator& rhs) const;
