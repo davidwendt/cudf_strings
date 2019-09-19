@@ -43,7 +43,7 @@ class string_view
    * @param data Device char array encoded in UTF8.
    * @param bytes Number of bytes in data array.
    *---------------------------------------------------------------------------**/
-  __device__ string_view(const char* data, size_type bytes);
+  __host__ __device__ string_view(const char* data, size_type bytes);
   /**---------------------------------------------------------------------------*
    * @brief Create instance from existing device char array. The array must
    * include a null-terminator ('\0).
@@ -60,11 +60,11 @@ class string_view
   /**---------------------------------------------------------------------------*
    * @brief Return the number of bytes in this string
    *---------------------------------------------------------------------------**/
-  __device__ size_type size() const;
+  __host__ __device__ size_type size() const;
   /**---------------------------------------------------------------------------*
    * @brief Return the number of bytes in this string
    *---------------------------------------------------------------------------**/
-  __device__ size_type length() const;
+  __host__ __device__ size_type length() const;
   /**---------------------------------------------------------------------------*
    * @brief Return the number of characters (UTF-8) in this string
    *---------------------------------------------------------------------------**/
@@ -72,7 +72,7 @@ class string_view
   /**---------------------------------------------------------------------------*
    * @brief Return a pointer to the internal device array
    *---------------------------------------------------------------------------**/
-  __device__ const char* data() const;
+  __host__ __device__ const char* data() const;
 
   /**---------------------------------------------------------------------------*
    * @brief Return true if string has no characters

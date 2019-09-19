@@ -7,8 +7,9 @@
 #include <thrust/for_each.h>
 #include <thrust/execution_policy.h>
 
-#include <cudf/strings/strings_column_handler.hpp>
+#include <cudf/strings/strings_column_view.hpp>
 #include <cudf/strings/strings_column_factories.hpp>
+#include <rmm/thrust_rmm_allocator.h>
 
 // nvcc -w -std=c++14 --expt-relaxed-constexpr --expt-extended-lambda -gencode arch=compute_70,code=sm_70 test_string_column.cu -I/usr/local/cuda/include -I../../../cudf/cpp/include -I../../../rmm/include -L../../../cudf/cpp/build -L../../../rmm/build -lcudf -lrmm -o test_string_column
 
@@ -22,7 +23,7 @@ std::vector<const char*> hstrs{ "the quick brown fox jumps over the lazy dog",
 int main(int argc, const char** argv)
 {
    // first, copy strings to device memory
-   thrust::device_vector<thrust::pair<const char*,size_t> > strings;
+   rmm::device_vector<thrust::pair<const char*,size_t> > strings;
    size_t memsize = 0;
    for( auto itr=hstrs.begin(); itr!=hstrs.end(); ++itr )
    {
@@ -42,9 +43,8 @@ int main(int argc, const char** argv)
    }
    
    //
-   auto column = cudf::make_strings_column( reinterpret_cast<std::pair<const char*,size_t>*>(strings.data().get()), strings.size() );
-   auto handler = cudf::strings_column_handler(column->view());
-   handler.print();
+   auto column = cudf::make_strings_column( strings );
+   cudf::strings::print(cudf::strings_column_view(column->view()));
 
    return 0;
 }
