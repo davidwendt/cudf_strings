@@ -1,11 +1,24 @@
 /*
-*/
+ * Copyright (c) 2019, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 
 #include <cstdlib>
 
-namespace cudf
+namespace
 {
-
 typedef unsigned char BYTE;
 
 /**---------------------------------------------------------------------------*
@@ -17,17 +30,15 @@ typedef unsigned char BYTE;
  * @param byte Byte from an encoded character.
  * @return Number of bytes.
  *---------------------------------------------------------------------------**/
-__host__ __device__ inline static size_type bytes_in_char_byte(BYTE byte)
+__host__ __device__ inline cudf::size_type bytes_in_utf8_byte(BYTE byte)
 {
-    size_type count = 1;
-    // no if-statements means no divergence
-    count += (int)((byte & 0xF0) == 0xF0);
-    count += (int)((byte & 0xE0) == 0xE0);
-    count += (int)((byte & 0xC0) == 0xC0);
-    count -= (int)((byte & 0xC0) == 0x80);
+    cudf::size_type count = 1;
+    count += (int)((byte & 0xF0) == 0xF0); // 4-byte character prefix
+    count += (int)((byte & 0xE0) == 0xE0); // 3-byte character prefix
+    count += (int)((byte & 0xC0) == 0xC0); // 2-byte character prefix
+    count -= (int)((byte & 0xC0) == 0x80); // intermediate byte
     return count;
 }
-
 
 /**---------------------------------------------------------------------------*
  * @brief Returns the number of bytes used in the provided char array by
@@ -36,18 +47,24 @@ __host__ __device__ inline static size_type bytes_in_char_byte(BYTE byte)
  * @param str Null-terminated array of chars.
  * @return Number of bytes.
  *---------------------------------------------------------------------------**/
-__device__ inline static size_type string_length( const char* str )
+__device__ inline cudf::size_type string_length( const char* str )
 {
     if( !str )
         return 0;
-    size_type bytes = 0;
+    cudf::size_type bytes = 0;
     while(*str++)
         ++bytes;
     return bytes;
 }
 
+} // namespace
 
-__device__ inline string_view::string_view(const char* data, size_type bytes)
+namespace cudf
+{
+namespace strings
+{
+
+__host__ __device__ inline string_view::string_view(const char* data, size_type bytes)
     : _data(data), _bytes(bytes)
 {}
 
@@ -58,32 +75,27 @@ __device__ inline string_view::string_view(const char* data)
 }
 
 //
-__device__ inline size_type string_view::size() const
+__host__ __device__ inline size_type string_view::size_bytes() const
 {
     return _bytes;
 }
 
 __device__ inline size_type string_view::length() const
 {
-    return _bytes;
+    return detail::characters_in_string(_data,_bytes);
 }
 
-__device__ inline size_type string_view::characters() const
-{
-    return chars_in_string(_data,_bytes);
-}
-
-__device__ inline const char* string_view::data() const
+__host__ __device__ inline const char* string_view::data() const
 {
     return _data;
 }
 
-__device__ inline bool string_view::empty() const
+__host__ __device__ inline bool string_view::empty() const
 {
     return _bytes == 0;
 }
 
-__device__ inline bool string_view::is_null() const
+__host__ __device__ inline bool string_view::is_null() const
 {
     return _data == nullptr;
 }
@@ -93,12 +105,12 @@ __device__ inline string_view::iterator::iterator(const string_view& str, size_t
     : cpos(pos)
 {
     p = str.data();
-    offset = str.byte_offset_for(cpos);
+    offset = str.byte_offset(cpos);
 }
 
 __device__ inline string_view::iterator& string_view::iterator::operator++()
 {
-    offset += bytes_in_char_byte((BYTE)p[offset]);
+    offset += bytes_in_utf8_byte((BYTE)p[offset]);
     ++cpos;
     return *this;
 }
@@ -122,10 +134,10 @@ __device__ inline bool string_view::iterator::operator!=(const string_view::iter
 }
 
 // unsigned int can hold 1-4 bytes for the UTF8 char
-__device__ inline Char string_view::iterator::operator*() const
+__device__ inline char_utf8 string_view::iterator::operator*() const
 {
-    Char chr = 0;
-    char_to_Char(p + offset, chr);
+    char_utf8 chr = 0;
+    detail::to_char_utf8(p + offset, chr);
     return chr;
 }
 
@@ -146,32 +158,32 @@ __device__ inline string_view::iterator string_view::begin() const
 
 __device__ inline string_view::iterator string_view::end() const
 {
-    return iterator(*this, characters());
+    return iterator(*this, length());
 }
 
-__device__ inline Char string_view::at(size_type pos) const
+__device__ inline char_utf8 string_view::at(size_type pos) const
 {
-    unsigned int offset = byte_offset_for(pos);
+    unsigned int offset = byte_offset(pos);
     if(offset >= _bytes)
         return 0;
-    Char chr = 0;
-    char_to_Char(data() + offset, chr);
+    char_utf8 chr = 0;
+    detail::to_char_utf8(data() + offset, chr);
     return chr;
 }
 
-__device__ inline Char string_view::operator[](size_type pos) const
+__device__ inline char_utf8 string_view::operator[](size_type pos) const
 {
     return at(pos);
 }
 
-__device__ inline size_type string_view::byte_offset_for(size_type pos) const
+__device__ inline size_type string_view::byte_offset(size_type pos) const
 {
     size_type offset = 0;
     const char* sptr = _data;
     const char* eptr = sptr + _bytes;
     while( (pos > 0) && (sptr < eptr) )
     {
-        size_type charbytes = bytes_in_char_byte((BYTE)*sptr++);
+        size_type charbytes = bytes_in_utf8_byte((BYTE)*sptr++);
         if( charbytes )
             --pos;
         offset += charbytes;
@@ -181,7 +193,7 @@ __device__ inline size_type string_view::byte_offset_for(size_type pos) const
 
 __device__ inline int string_view::compare(const string_view& in) const
 {
-    return compare(in.data(), in.size());
+    return compare(in.data(), in.size_bytes());
 }
 
 __device__ inline int string_view::compare(const char* data, size_type bytes) const
@@ -192,7 +204,7 @@ __device__ inline int string_view::compare(const char* data, size_type bytes) co
     const unsigned char* ptr2 = reinterpret_cast<const unsigned char*>(data);
     if(!ptr2)
         return 1;
-    size_type len1 = size();
+    size_type len1 = size_bytes();
     size_type idx = 0;
     for(; (idx < len1) && (idx < bytes); ++idx)
     {
@@ -242,7 +254,7 @@ __device__ inline bool string_view::operator>=(const string_view& rhs) const
 
 __device__ inline size_type string_view::find(const string_view& str, size_type pos, int count) const
 {
-    return find(str.data(), str.size(), pos, count);
+    return find(str.data(), str.size_bytes(), pos, count);
 }
 
 __device__ inline size_type string_view::find(const char* str, size_type bytes, size_type pos, int count) const
@@ -250,14 +262,14 @@ __device__ inline size_type string_view::find(const char* str, size_type bytes, 
     const char* sptr = data();
     if(!str || !bytes)
         return -1;
-    size_type nchars = characters();
+    size_type nchars = length();
     if(count < 0)
         count = nchars;
     size_type end = pos + count;
     if(end < 0 || end > nchars)
        end = nchars;
-    size_type spos = byte_offset_for(pos);
-    size_type epos = byte_offset_for(end);
+    size_type spos = byte_offset(pos);
+    size_type epos = byte_offset(end);
 
     size_type len2 = bytes;
     size_type len1 = (epos - spos) - len2 + 1;
@@ -270,17 +282,17 @@ __device__ inline size_type string_view::find(const char* str, size_type bytes, 
         for( size_type jdx=0; match && (jdx < len2); ++jdx )
             match = (ptr1[jdx] == ptr2[jdx]);
         if( match )
-            return char_offset(idx+spos);
+            return character_offset(idx+spos);
         ptr1++;
     }
     return -1;
 }
 
 // maybe get rid of this one
-__device__ inline size_type string_view::find(Char chr, size_type pos, int count) const
+__device__ inline size_type string_view::find(char_utf8 chr, size_type pos, int count) const
 {
-    size_type sz = size();
-    size_type nchars = characters();
+    size_type sz = size_bytes();
+    size_type nchars = length();
     if(count < 0)
         count = nchars;
     size_type end = pos + count;
@@ -288,26 +300,26 @@ __device__ inline size_type string_view::find(Char chr, size_type pos, int count
         end = nchars;
     if(pos > end || chr == 0 || sz == 0)
         return -1;
-    size_type spos = byte_offset_for(pos);
-    size_type epos = byte_offset_for(end);
+    size_type spos = byte_offset(pos);
+    size_type epos = byte_offset(end);
     //
-    size_type chsz = bytes_in_char(chr);
+    size_type chsz = detail::bytes_in_char_utf8(chr);
     const char* sptr = data();
     const char* ptr = sptr + spos;
     size_type len = (epos - spos) - chsz;
     for(size_type idx = 0; idx <= len; ++idx)
     {
-        Char ch = 0;
-        char_to_Char(ptr++, ch);
+        char_utf8 ch = 0;
+        detail::to_char_utf8(ptr++, ch);
         if(chr == ch)
-            return chars_in_string(sptr, idx + spos);
+            return detail::characters_in_string(sptr, idx + spos);
     }
     return -1;
 }
 
 __device__ inline size_type string_view::rfind(const string_view& str, size_type pos, int count) const
 {
-    return rfind(str.data(), str.size(), pos, count);
+    return rfind(str.data(), str.size_bytes(), pos, count);
 }
 
 __device__ inline size_type string_view::rfind(const char* str, size_type bytes, size_type pos, int count) const
@@ -315,13 +327,13 @@ __device__ inline size_type string_view::rfind(const char* str, size_type bytes,
     const char* sptr = data();
     if(!str || !bytes)
         return -1;
-    size_type sz = size();
-    size_type nchars = characters();
+    size_type sz = size_bytes();
+    size_type nchars = length();
     size_type end = pos + count;
     if(end < 0 || end > nchars)
         end = nchars;
-    size_type spos = byte_offset_for(pos);
-    size_type epos = byte_offset_for(end);
+    size_type spos = byte_offset(pos);
+    size_type epos = byte_offset(end);
 
     size_type len2 = bytes;
     size_type len1 = (epos - spos) - len2 + 1;
@@ -334,16 +346,16 @@ __device__ inline size_type string_view::rfind(const char* str, size_type bytes,
         for(size_type jdx=0; match && (jdx < len2); ++jdx)
             match = (ptr1[jdx] == ptr2[jdx]);
         if(match)
-            return char_offset(epos - len2 - idx);
+            return character_offset(epos - len2 - idx);
         ptr1--; // go backwards
     }
     return -1;
 }
 
-__device__ inline size_type string_view::rfind(Char chr, size_type pos, int count) const
+__device__ inline size_type string_view::rfind(char_utf8 chr, size_type pos, int count) const
 {
-    size_type sz = size();
-    size_type nchars = characters();
+    size_type sz = size_bytes();
+    size_type nchars = length();
     if(count < 0)
         count = nchars;
     size_type end = pos + count;
@@ -351,19 +363,19 @@ __device__ inline size_type string_view::rfind(Char chr, size_type pos, int coun
         end = nchars;
     if(pos > end || chr == 0 || sz == 0)
         return -1;
-    size_type spos = byte_offset_for(pos);
-    size_type epos = byte_offset_for(end);
+    size_type spos = byte_offset(pos);
+    size_type epos = byte_offset(end);
 
-    size_type chsz = bytes_in_char(chr);
+    size_type chsz = detail::bytes_in_char_utf8(chr);
     const char* sptr = data();
     const char* ptr = sptr + epos - 1;
     size_type len = (epos - spos) - chsz;
     for(size_type idx = 0; idx < len; ++idx)
     {
-        Char ch = 0;
-        char_to_Char(ptr--, ch);
+        char_utf8 ch = 0;
+        detail::to_char_utf8(ptr--, ch);
         if(chr == ch)
-            return chars_in_string(sptr, epos - idx - 1);
+            return detail::characters_in_string(sptr, epos - idx - 1);
     }
     return -1;
 }
@@ -372,10 +384,10 @@ __device__ inline size_type string_view::rfind(Char chr, size_type pos, int coun
 // parameters are character position values
 __device__ inline string_view string_view::substr(size_type pos, size_type length) const
 {
-    size_type spos = byte_offset_for(pos);
-    size_type epos = byte_offset_for(pos + length);
-    if( epos > size() )
-        epos = size();
+    size_type spos = byte_offset(pos);
+    size_type epos = byte_offset(pos + length);
+    if( epos > size_bytes() )
+        epos = size_bytes();
     if(spos >= epos)
         return string_view("",0);
     length = epos - spos; // converts length to bytes
@@ -385,7 +397,7 @@ __device__ inline string_view string_view::substr(size_type pos, size_type lengt
 __device__ inline size_type string_view::split(const char* delim, int count, string_view* strs) const
 {
     const char* sptr = data();
-    size_type sz = size();
+    size_type sz = size_bytes();
     if(sz == 0)
     {
         if(strs && count)
@@ -412,8 +424,8 @@ __device__ inline size_type string_view::split(const char* delim, int count, str
     if(strsCount < count)
         count = strsCount;
     //
-    size_type dchars = (bytes ? chars_in_string(delim,bytes) : 1);
-    size_type nchars = characters();
+    size_type dchars = (bytes ? detail::characters_in_string(delim,bytes) : 1);
+    size_type nchars = length();
     size_type spos = 0, sidx = 0;
     size_type epos = find(delim, bytes);
     while(epos >= 0)
@@ -434,7 +446,7 @@ __device__ inline size_type string_view::split(const char* delim, int count, str
 __device__ inline size_type string_view::rsplit(const char* delim, int count, string_view* strs) const
 {
     const char* sptr = data();
-    size_type sz = size();
+    size_type sz = size_bytes();
     if(sz == 0)
     {
         if(strs && count)
@@ -461,9 +473,9 @@ __device__ inline size_type string_view::rsplit(const char* delim, int count, st
     if(strsCount < count)
         count = strsCount;
     //
-    unsigned int dchars = (bytes ? chars_in_string(delim,bytes) : 1);
-    int epos = (int)characters(); // end pos is not inclusive
-    int sidx = count - 1;          // index for strs array
+    unsigned int dchars = (bytes ? detail::characters_in_string(delim,bytes) : 1);
+    int epos = (int)length(); // end pos is not inclusive
+    int sidx = count - 1;     // index for strs array
     int spos = rfind(delim, bytes);
     while(spos >= 0)
     {
@@ -481,8 +493,14 @@ __device__ inline size_type string_view::rsplit(const char* delim, int count, st
     return rtn;
 }
 
+__device__ inline size_type string_view::character_offset(size_type bytepos) const
+{
+    return detail::characters_in_string(data(), bytepos);
+}
 
-__host__ __device__ inline size_type string_view::bytes_in_char(Char chr)
+namespace detail
+{
+__host__ __device__ inline size_type bytes_in_char_utf8(char_utf8 chr)
 {
     size_type count = 1;
     count += (int)((chr & (unsigned)0x0000FF00) > 0);
@@ -491,31 +509,31 @@ __host__ __device__ inline size_type string_view::bytes_in_char(Char chr)
     return count;
 }
 
-__host__ __device__ inline size_type string_view::char_to_Char(const char* pSrc, Char &chr)
+__host__ __device__ inline size_type to_char_utf8(const char* pSrc, char_utf8 &chr)
 {
-    size_type chwidth = bytes_in_char_byte((BYTE)*pSrc);
-    chr = (Char)(*pSrc++) & 0xFF;
+    size_type chwidth = bytes_in_utf8_byte((BYTE)*pSrc);
+    chr = (char_utf8)(*pSrc++) & 0xFF;
     if(chwidth > 1)
     {
         chr = chr << 8;
-        chr |= ((Char)(*pSrc++) & 0xFF); // << 8;
+        chr |= ((char_utf8)(*pSrc++) & 0xFF); // << 8;
         if(chwidth > 2)
         {
             chr = chr << 8;
-            chr |= ((Char)(*pSrc++) & 0xFF); // << 16;
+            chr |= ((char_utf8)(*pSrc++) & 0xFF); // << 16;
             if(chwidth > 3)
             {
                 chr = chr << 8;
-                chr |= ((Char)(*pSrc++) & 0xFF); // << 24;
+                chr |= ((char_utf8)(*pSrc++) & 0xFF); // << 24;
             }
         }
     }
     return chwidth;
 }
 
-__host__ __device__ inline size_type string_view::Char_to_char(Char chr, char* dst)
+__host__ __device__ inline size_type from_char_utf8(char_utf8 chr, char* dst)
 {
-    size_type chwidth = bytes_in_char(chr);
+    size_type chwidth = bytes_in_char_utf8(chr);
     for(size_type idx = 0; idx < chwidth; ++idx)
     {
         dst[chwidth - idx - 1] = (char)chr & 0xFF;
@@ -525,7 +543,7 @@ __host__ __device__ inline size_type string_view::Char_to_char(Char chr, char* d
 }
 
 // counts the number of characters in the given char array
-__host__ __device__ inline size_type string_view::chars_in_string(const char* str, size_type bytes)
+__host__ __device__ inline size_type characters_in_string(const char* str, size_type bytes)
 {
     if( (str==0) || (bytes==0) )
         return 0;
@@ -536,9 +554,6 @@ __host__ __device__ inline size_type string_view::chars_in_string(const char* st
     return (size_type)nchars;
 }
 
-__device__ inline size_type string_view::char_offset(size_type bytepos) const
-{
-    return chars_in_string(data(), bytepos);
-}
-
-}
+} // namespace detail
+} // namespace strings
+} // namespace cudf

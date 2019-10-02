@@ -57,5 +57,30 @@ int main(int argc, const char** argv)
       cudf::strings::print(strings);
    }
 
+#if 0
+   thrust::device_vector<int64_t> map64(2,0);
+   map64[0] = 4;
+   map64[1] = 2;
+   cudf::column_view map64_view( cudf::data_type{cudf::INT64}, map64.size(),
+                                 map64.data().get(), nullptr, 0);
+   {
+      auto results = cudf::strings::gather(strings1,map64_view);
+      auto strings = cudf::strings_column_view(results->view());
+      printf("results (gather(column1,[4,2]))\n");
+      cudf::strings::print(strings);
+   }
+
+   thrust::device_vector<int8_t> map8(2,0);
+   map8[0] = 5;
+   map8[1] = 0;
+   cudf::column_view map8_view( cudf::data_type{cudf::INT8}, map8.size(),
+                                map8.data().get(), nullptr, 0);
+   {
+      auto results = cudf::strings::gather(strings1,map8_view);
+      auto strings = cudf::strings_column_view(results->view());
+      printf("results (gather(column1,[5,0]))\n");
+      cudf::strings::print(strings);
+   }
+#endif
    return 0;
 }

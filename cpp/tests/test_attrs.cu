@@ -18,14 +18,6 @@ std::vector<const char*> hstrs1{ "xyz", "", "aé", nullptr, "bbb", "éé" };
 
 #include "./test_utils.inl"
 
-void print_int_column( cudf::column_view view )
-{
-   std::vector<unsigned int> cps(view.size());
-   cudaMemcpy( cps.data(), view.data<uint32_t>(), view.size()*sizeof(uint32_t), cudaMemcpyDeviceToHost );
-   for( auto itr=cps.begin(); itr!=cps.end(); ++itr )
-        printf(" %d", *itr);
-    printf("\n");
-}
 
 int main(int argc, const char** argv)
 {
